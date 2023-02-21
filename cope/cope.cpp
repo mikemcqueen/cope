@@ -11,80 +11,6 @@
 
 namespace dp::txn {
 
-  template<typename PromiseType>
-  class handler_t {
-  private:
-    using this_t = handler_t<PromiseType>;
-  public:
-    using promise_type = PromiseType; // coroutine promise_type
-    using handle_t = std::coroutine_handle<promise_type>;
-
-    struct awaitable {
-      constexpr bool await_ready() { return false; }
-      // note: possible threading / lifetime issue in await_suspend
-      void await_suspend(this_t::handle_t h) { promise_ = &h.promise(); }
-      promise_type& await_resume() { return *promise_; }
-    private:
-      promise_type* promise_;
-    };
-
-    struct initial_awaitable {
-      bool await_ready() { return false; }
-      bool await_suspend(this_t::handle_t h) {
-        puts("initial_awaitable::await_suspend()");
-        // TODO: this obviously restricts the promise type and I should use
-        // a concept or just make it an inner class to make that (more) explict
-        h.promise().set_active_handle(h);
-        return false;
-      }
-      void await_resume() { /* will never be called */ }
-    };
-
-  public:
-    handler_t(this_t& other) = delete;
-    handler_t operator=(this_t& other) = delete;
-    /*
-      handler_t(this_t&& other) noexcept : coro_handle_(std::exchange(other.coro_handle_, nullptr)) {}
-      handler_t& operator=(this_t&& other) noexcept {
-        coro_handle_ = std::exchange(other.coro_handle_, nullptr);
-        return *this;
-      }
-    */
-    explicit handler_t(promise_type* p) noexcept :
-      coro_handle_(handle_t::from_promise(*p)) {}
-    ~handler_t() { if (coro_handle_) coro_handle_.destroy(); }
-
-    handle_t handle() const noexcept { return coro_handle_; }
-
-    // this logic should be in an awaitable.
-    auto send_value(handle_t handle,
-      std::unique_ptr<DP::Message::Data_t> value)
-    {
-      auto& p = handle.promise();
-      p.send_value(std::move(value));
-      puts(std::format("send_value, in_ before resume, msg_name: {}",
-        p.in_->msg_name).c_str());
-      handle.resume();
-      puts(std::format("send_value, out_ after resume, msg_name: {}",
-        p.out_->msg_name).c_str());
-      return std::move(p.out_);
-    }
-
-    auto send_value(std::unique_ptr<DP::Message::Data_t> value) {
-      return send_value(active_handle(), std::move(value));
-    }
-
-  private:
-    handle_t active_handle() const noexcept {
-      return coro_handle_.promise().active_handle();
-    }
-    handle_t root_handle() const noexcept {
-      return coro_handle_.promise().root_handle();
-    }
-
-    handle_t coro_handle_;
-  };
-
   template<typename T>
   struct in_t
   {
@@ -113,67 +39,168 @@ namespace dp::txn {
   struct message_out_t : out_t<DP::Message::Data_t> {};
   struct message_inout_t : message_in_t, message_out_t {};
 
-  template<typename State>
-  struct message_inout_promise_t : message_inout_t
-  {
-  private:
-    using this_t = message_inout_promise_t<State>;
-    using handle_t = std::coroutine_handle<this_t>;
+  class handler_t {
   public:
-    using handler_t = handler_t<this_t>;
+    struct initial_awaitable;
+    struct promise_type;
+    using handle_t = std::coroutine_handle<promise_type>;
 
-    handler_t::initial_awaitable initial_suspend() noexcept { return {}; }
-    std::suspend_always final_suspend() noexcept { return {}; }
-    handler_t get_return_object() noexcept { return handler_t{ this }; }
-    void unhandled_exception() { throw; }
-    void return_void() { throw std::runtime_error("co_return not allowed"); }
+    struct promise_type : message_in_t
+    {
+      handler_t::initial_awaitable initial_suspend() noexcept { return {}; }
+      std::suspend_always final_suspend() noexcept { return {}; }
+      auto /*handler_t*/ get_return_object() noexcept { return handler_t{this}; }
+      void unhandled_exception() { throw; }
+      void return_void() { throw std::runtime_error("co_return not allowed"); }
+      std::suspend_never yield_value(std::unique_ptr<DP::Message::Data_t> value) {
+        puts(std::format("in_t::yield_value").c_str());
+        root_handle_.promise().in_ = std::move(value);
+        return {};
+      }
 
-    handle_t active_handle() const { return active_handle_.value(); }
-    void set_active_handle(handle_t h) { active_handle_.emplace(h); }
+      auto active_handle() const { return active_handle_; }
+      void set_active_handle(handle_t h) { active_handle_ = h; }
 
-    handle_t root_handle() const { return root_handle_.value(); }
-    void set_root_handle(handle_t h) { root_handle_.emplace(h); }
+      auto root_handle() const { return root_handle_; }
+      void set_root_handle(handle_t h) { root_handle_ = h; }
 
-    handle_t previous_handle() const { return previous_handle_.value(); }
-    void set_previous_handle(handle_t h) { previous_handle_.emplace(h); }
+      auto prev_handle() const { return prev_handle_.value(); }
+      void set_prev_handle(handle_t h) { prev_handle_.emplace(h); }
+      void clear_prev_handle() { prev_handle_.reset(); }
 
-    State state;
-  //private:
-    std::optional<handle_t> active_handle_; // maybe this one doesn't need to be optional
-    std::optional<handle_t> root_handle_;
-    std::optional<handle_t> previous_handle_;
+      auto& txn_handler() { return *txn_handler_;  }
+      void set_txn_handler(handler_t* handler) { txn_handler_ = handler; }
+
+      //   State state;
+       //private
+      handle_t active_handle_; // maybe this one doesn't need to be optional
+      handle_t root_handle_;   // or this for that matter
+      std::optional<handle_t> prev_handle_;
+      handler_t* txn_handler_;
+    };
+
+    struct awaitable {
+      constexpr bool await_ready() { return false; }
+      // note: possible threading / lifetime issue in await_suspend
+      void await_suspend(handle_t h) { promise_ = &h.promise(); }
+      promise_type& await_resume() { return *promise_; }
+    private:
+      promise_type* promise_;
+    };
+
+    struct initial_awaitable {
+      bool await_ready() { return false; }
+      bool await_suspend(handle_t h) {
+        puts("initial_awaitable::await_suspend()");
+        // TODO: this obviously restricts the promise type and I should use
+        // a concept or just make it an inner class to make that (more) explict
+        h.promise().set_active_handle(h);
+        h.promise().set_root_handle(h);
+        return false;
+      }
+      void await_resume() { /* will never be called */ }
+    };
+
+  public:
+    handler_t(handler_t& other) = delete;
+    handler_t operator=(handler_t& other) = delete;
+    /*
+      handler_t(this_t&& other) noexcept : coro_handle_(std::exchange(other.coro_handle_, nullptr)) {}
+      handler_t& operator=(this_t&& other) noexcept {
+        coro_handle_ = std::exchange(other.coro_handle_, nullptr);
+        return *this;
+      }
+    */
+    explicit handler_t(promise_type* p) noexcept :
+      coro_handle_(handle_t::from_promise(*p)) { p->set_txn_handler(this); }
+    ~handler_t() { if (coro_handle_) coro_handle_.destroy(); }
+
+    handle_t handle() const noexcept { return coro_handle_; }
+
+    // this logic should be in an awaitable.
+    auto send_value(handle_t handle,
+      std::unique_ptr<DP::Message::Data_t> value)
+    {
+      auto& p = handle.promise();
+      p.send_value(std::move(value));
+      puts(std::format("send_value, before in_ msg_name: {}",
+        p.in_->msg_name).c_str());
+      handle.resume();
+      if (p.in_) {
+        puts(std::format("send_value, after in_ msg_name: {}",
+          p.in_->msg_name).c_str());
+      } else {
+        puts(std::format("send_value, after in_ empty").c_str());
+      }
+      return std::move(p.in_);
+    }
+
+    auto send_value(std::unique_ptr<DP::Message::Data_t> value) {
+      return send_value(active_handle(), std::move(value));
+    }
+
+  private:
+    handle_t active_handle() const noexcept {
+      return coro_handle_.promise().active_handle();
+    }
+    handle_t root_handle() const noexcept {
+      return coro_handle_.promise().root_handle();
+    }
+
+    handle_t coro_handle_;
+  }; // struct handler_t
+
+  // this couuld probably be: txn_transfer_awaitable that works both directions
+  template<bool Start>
+  struct transfer_txn_awaitable {
+    using handle_t = handler_t::handle_t;
+
+    transfer_txn_awaitable(handle_t handle, DP::msg_ptr_t msg) :
+      dst_handle_(handle), msg_(std::move(msg)) {}
+
+    auto await_ready() { return false; }
+    auto await_suspend(handle_t h) {
+      puts(std::format("transfer_txn_awaitable<{}>::await_suspend()", start_).c_str());
+      src_promise_ = &h.promise();
+
+      auto& dst_p = dst_handle_.promise();
+      dst_p.in_ = std::move(msg_);
+      puts(std::format("  setting dst_p.in_, msg_name: {}",
+        dst_p.in_->msg_name).c_str());
+
+      // note there is some funny business here. because we are not storing
+      // the "actual handle" in a promise, we infer that active_handle is the
+      // "actual handle", which is true for all cases except root handle,
+      // where, the root_handle the "actual". we can tell when we're at the
+      // root because there is no previous_handle.
+
+      // setting root and prev should only be done for "start_txn"; this will
+      // break things if this is used for "finish_txn".
+      if (start_) {
+        dst_p.set_root_handle(src_promise_->root_handle());
+        dst_p.set_prev_handle(src_promise_->active_handle());
+      } else {
+        src_promise_->clear_prev_handle();
+      }
+      auto& root_p = src_promise_->root_handle().promise();
+      root_p.set_active_handle(dst_p.active_handle());
+
+      return dst_handle_; // symmetric transfer to dst
+    }
+    auto& await_resume() {
+      puts(std::format("transfer_txn_awaitable<{}>::await_resume()", start_).c_str());
+      return *src_promise_;
+    }
+  private:
+    handler_t::promise_type* src_promise_;
+    handle_t dst_handle_;
+    DP::msg_ptr_t msg_;
+    bool start_ = Start;
   };
+
+  using start_txn_awaitable = transfer_txn_awaitable<true>;
+  using complete_txn_awaitable = transfer_txn_awaitable<false>;
 } // namespace txn
-
-template<typename SrcPromiseT, typename DstPromiseT>
-struct start_txn_awaitable {
-  using dst_handle_t = std::coroutine_handle<DstPromiseT>;
-
-  start_txn_awaitable(dst_handle_t handle, DP::msg_ptr_t msg) :
-    dst_handle_(handle), msg_(std::move(msg)) {}
-
-  auto await_ready() { return false; }
-  auto await_suspend(/*this_t::handle_t*/ auto h) {
-    puts("start_txn_awaitable::await_suspend()");
-    src_promise_ = &h.promise();
-
-    auto& dst_p = dst_handle_.promise();
-    dst_p.in_ = std::move(msg_);
-    puts(std::format("dst_p.in_, msg_name: {}",
-      dst_p.in_->msg_name).c_str());
-
-    // TODO: update root, prev handle state in dst_
-
-    return dst_handle_; // symmetric transfer to dst
-  }
-  auto& await_resume() {
-    return *src_promise_;
-  }
-private:
-  SrcPromiseT* src_promise_;
-  dst_handle_t dst_handle_;
-  DP::msg_ptr_t msg_;
-};
 
 /*template<typename FromState, typename ToState>
 auto start_txn(message_inout_promise_t<FromState>& fromPromise,
@@ -194,8 +221,7 @@ auto start_txn(DstPromiseT& dst_promise, DP::msg_ptr_t msg) {
 */
 
 namespace setprice {
-  using promise_t = dp::txn::message_inout_promise_t<txn::state_t>;
-  using handler_t = dp::txn::handler_t<promise_t>;
+  using namespace dp::txn;
 
   auto process_txn_message(const DP::Message::Data_t& msg)
     // -> std::unique_ptr<DP::Message::Data_t>
@@ -207,10 +233,10 @@ namespace setprice {
 
   auto process_message(const DP::Message::Data_t& msg,
     const txn::state_t& state)
-    // -> std::unique_ptr<DP::Message::Data_t>
+    -> std::unique_ptr<DP::Message::Data_t>
   {
     puts(std::format("setprice::process_message: {}", msg.msg_name).c_str());
-    return std::make_unique<DP::Message::Data_t>("setprice-msg-result");
+    return std::make_unique<DP::txn::success_result_t>(txn::name);
   }
 
   auto txn_handler() -> handler_t
@@ -227,8 +253,26 @@ namespace setprice {
         co_yield std::move(result);
         // if is txn_complete, symmetric transfer back to previous
       } else {
-        auto result = process_message(msg, promise.state); // this could be member func of inner class of txn_handler
-        co_yield std::move(result);
+        // TODO: this comes from promise->txn_handler->state
+        txn::state_t state;
+        auto result_ptr = process_message(msg, state); // this could be member func of inner class of txn_handler
+        if (result_ptr) {
+          auto& result = *result_ptr.get();
+          puts(std::format("  process_message, result: {}", result.msg_name).c_str());
+          if (DP::is_txn_message(result)) {
+            if (DP::is_complete_txn(result)) {
+              co_await dp::txn::complete_txn_awaitable{ promise.prev_handle(),
+                std::move(result_ptr) };
+            } else {
+              puts("unhandled txn message");
+            }
+          }
+          else {
+            co_yield std::move(result_ptr);
+          }
+        } else {
+          puts("  process_message, empty result");
+        }
       }
     }
   }
@@ -236,8 +280,7 @@ namespace setprice {
 
 namespace sellitem
 {
-  using promise_t = dp::txn::message_inout_promise_t<txn::state_t>;
-  using handler_t = dp::txn::handler_t<promise_t>;
+  using handler_t = dp::txn::handler_t;
 
   auto process_txn_message(const DP::Message::Data_t& msg)
     // -> std::unique_ptr<DP::Message::Data_t>
@@ -298,28 +341,20 @@ namespace sellitem
         auto result = process_txn_message(msg);
         co_yield std::move(result);
       } else {
-        auto result = process_message(msg, promise.state);
+        // TODO this comes from promise->handler->state
+        txn::state_t state;
+        auto result = process_message(msg, state);
         // i think there is some room for improvement here on next line
         if (auto& txn = *result.get(); DP::is_start_txn(txn)) {
           //txn_handler_map.at(get_txn_name(msg)).send_value(std::move(result));
           auto name = DP::get_txn_name(txn);
           if (name == setprice::txn::name) {
-            // NOTE: moving "msg" here instead of "result". i'm not even sure
-            // what "result" would be in the deque_t case? the queue.front()?
-            // or the entire queue?
-            // can this be co_yield deqeue<dp::msg_ptr_t>? yes? to handle both
-            // a) xfer of state to dst, and b) xfer of msg(s) to dst.  note that
-            // in current conceived design state is in txt_start.
-            // i'm a little worried about this "deqeue" of messages though, because
-            // it seems to imply special case handling of an "outer loop co_await"
-            // within the txn_handler. generally we just process one message on a
-            // co_await/co_yield.
-            // maybe we should promise.out_ = std::move(msg) here, in prep for
-            // transfer to new tx. instead of passing msg?
+            // the whole idea of a "txn_start" message might be unnecessary, as
+            // we can(?) reset destination handler state within the logic of the
+            // start_txn_awaitable
             /*auto txn_result = */
-            co_await start_txn_awaitable<sellitem::handler_t::promise_type,
-              setprice::handler_t::promise_type>
-              { setprice_handler.handle(), std::move(promise.in_) };
+            co_await dp::txn::start_txn_awaitable{ setprice_handler.handle(),
+              std::move(promise.in_) };
           }
           else {
             throw std::runtime_error(std::format("unsupported txn: {}", name).c_str());
@@ -351,11 +386,13 @@ int main()
     // 8. pop setprice txn. send anything to prev txn here? set to "resume"?
     // 9. 
     puts("---");
-    sellitem::handler_t tx_sell{ sellitem::txn_handler() };
-    sellitem::txn::state_t s1{ "some item", 1 };
+    dp::txn::handler_t tx_sell{ sellitem::txn_handler() };
+/*
+    sellitem::txn::state_t s1{"some item", 1};
     auto m1 = std::make_unique<sellitem::txn::start_t>(sellitem::txn::name, s1);
     // resume_with_value
     auto r1 = tx_sell.send_value(std::move(m1));
+*/
 
     auto m2 = std::make_unique<setprice::msg::data_t>(1);
     auto r2 = tx_sell.send_value(std::move(m2));

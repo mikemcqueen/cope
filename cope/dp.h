@@ -28,6 +28,7 @@ namespace DP {
   namespace txn {
     namespace name {
       constexpr std::string_view start = "txn_start";
+      constexpr std::string_view complete = "txn_complete";
     }
 
     struct state_t {
@@ -52,6 +53,25 @@ namespace DP {
       // should probably be a unique ptr and std::move it around
       State state;
     };
+
+    enum class result_code {
+      success = 0,
+      error = 1
+    };
+
+    // todo: T, -> reqires derives_from data_t 
+    template<result_code ResultCode>
+    struct result_t : data_t {
+      constexpr result_t(std::string_view txn_name) :
+        data_t(name::complete, txn_name) {}
+
+      result_code code = ResultCode;
+    };
+
+    struct success_result_t : result_t<result_code::success> {
+      constexpr success_result_t(std::string_view txn_name) :
+        result_t(txn_name) {}
+    };
   }
 
   constexpr auto is_txn_message(const Message::Data_t& msg) noexcept {
@@ -60,6 +80,10 @@ namespace DP {
 
   constexpr auto is_start_txn(const Message::Data_t& msg) {
     return msg.msg_name == txn::name::start;
+  }
+
+  constexpr auto is_complete_txn(const Message::Data_t& msg) {
+    return msg.msg_name == txn::name::complete;
   }
 
   constexpr auto get_txn_name(const Message::Data_t& msg) {
