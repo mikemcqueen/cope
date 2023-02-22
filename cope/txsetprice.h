@@ -6,7 +6,7 @@
 
 namespace setprice {
   namespace msg {
-    constexpr std::string_view name{ "set_price" };
+    constexpr std::string_view name{"set_price"};
 
     struct data_t : public DP::Message::Data_t {
       data_t(int p) :
@@ -19,7 +19,7 @@ namespace setprice {
   }
 
   namespace txn {
-    inline constexpr std::string_view name{ "set_price" };
+    constexpr std::string_view name{"set_price"};
 
     struct state_t {
       std::string prev_msg_name;

@@ -23,6 +23,7 @@ namespace DP {
     };
   }
 
+  using msg_t = Message::Data_t;
   using msg_ptr_t = std::unique_ptr<Message::Data_t>;
 
   namespace txn {
@@ -50,8 +51,20 @@ namespace DP {
     template<typename State>
     struct start_t : data_t {
       using state_ptr_t = std::unique_ptr<State>;
+
+      static const msg_t& msg_from(const msg_t& txn) {
+        const start_t<State>& txn_start = dynamic_cast<const start_t<State>&>(txn);
+        return *txn_start.msg.get();
+      }
+ 
+      static State& state_from(msg_t& txn) {
+        start_t<State>& txn_start = dynamic_cast<start_t<State>&>(txn);
+        return *txn_start.state.get();
+      }
+
       constexpr start_t(std::string_view txn_name, msg_ptr_t m, state_ptr_t s) :
         data_t(name::start, txn_name), msg(std::move(m)), state(std::move(s)) {}
+
 
       msg_ptr_t msg;
       state_ptr_t state;
@@ -59,7 +72,8 @@ namespace DP {
 
     enum class result_code {
       success = 0,
-      error = 1 // error_retry/retriable_error, error_?? unrecoverable_error
+      expected_error, // error_retry/retriable_error, error_?? unrecoverable_error
+      unexpected_error
     };
 
     // todo: T, -> reqires derives_from data_t ??

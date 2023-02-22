@@ -89,8 +89,8 @@ namespace dp::txn {
       handle_t active_handle_;
       handle_t root_handle_;
       std::optional<handle_t> prev_handle_;
-      handler_t* txn_handler_;
       DP::msg_ptr_t out_;
+      handler_t* txn_handler_;
     };
 
     struct initial_awaitable {
@@ -107,18 +107,16 @@ namespace dp::txn {
   public:
     handler_t(handler_t& other) = delete;
     handler_t operator=(handler_t& other) = delete;
-    /*
-      handler_t(this_t&& other) noexcept : coro_handle_(std::exchange(other.coro_handle_, nullptr)) {}
-      handler_t& operator=(this_t&& other) noexcept {
-        coro_handle_ = std::exchange(other.coro_handle_, nullptr);
-        return *this;
-      }
-    */
+
     explicit handler_t(promise_type* p) noexcept :
-      coro_handle_(handle_t::from_promise(*p)) { p->set_txn_handler(this); }
+      coro_handle_(handle_t::from_promise(*p))
+    { // todo: remove at some point?
+      p->set_txn_handler(this);
+    }
     ~handler_t() { if (coro_handle_) coro_handle_.destroy(); }
 
     handle_t handle() const noexcept { return coro_handle_; }
+    //std::string_view txn_name() const noexcept { return txn_name_; }
 
     // this logic should be in an awaitable.
     [[nodiscard]] auto send_value(DP::msg_ptr_t value)
@@ -153,37 +151,43 @@ namespace dp::txn {
     }
 
     handle_t coro_handle_;
+    //std::string txn_name_;
   }; // struct handler_t
 
   struct transfer_txn_awaitable {
     using handle_t = handler_t::handle_t;
 
-    transfer_txn_awaitable(handle_t handle, DP::msg_ptr_t msg) :
-      dst_handle_(handle), msg_(std::move(msg)) {}
+    transfer_txn_awaitable(std::string_view txn_name, const handle_t& handle,
+      DP::msg_ptr_t msg) :
+      dst_handle_(handle), txn_name_(txn_name), msg_(std::move(msg)) {}
 
     auto await_ready() { return false; }
     auto& await_resume() {
-      puts("transfer_txn_awaitable::await_resume()");
+      puts(std::format("transfer_txn_awaitable({})::await_resume()", txn_name_).c_str());
       return *src_promise_;
     }
   protected:
-    handler_t::promise_type* src_promise_ = nullptr;
     handle_t dst_handle_;
+    std::string txn_name_;
     DP::msg_ptr_t msg_;
+    handler_t::promise_type* src_promise_ = nullptr;
   };
 
   template<typename State>
   struct start_txn_awaitable : transfer_txn_awaitable {
-    using state_ptr_t = std::unique_ptr<State>;
-    start_txn_awaitable(handle_t handle, DP::msg_ptr_t msg, state_ptr_t state) :
-      transfer_txn_awaitable(handle, std::move(msg)),
+    using start_t = DP::txn::start_t<State>;
+    using state_ptr_t = start_t::state_ptr_t;
+
+    start_txn_awaitable(std::string_view txn_name, handle_t& handle,
+      DP::msg_ptr_t msg, state_ptr_t state) :
+      transfer_txn_awaitable(txn_name, handle, std::move(msg)),
       state_(std::move(state)) {}
 
     auto await_suspend(handle_t h) {
-      puts("start_txn_awaitable::await_suspend()");
+      puts(std::format("start_txn_awaitable({})::await_suspend()", txn_name_).c_str());
       src_promise_ = &h.promise();
       auto & dst_p = dst_handle_.promise();
-      dst_p.in_ = std::move(msg_);
+      dst_p.in_ = make_start(std::move(msg_), std::move(state_));
       puts(std::format("  setting dst_p.in_, msg_name: {}",
         dst_p.in_->msg_name).c_str());
 
@@ -195,15 +199,20 @@ namespace dp::txn {
       return dst_handle_; // symmetric transfer to dst
     }
 
+  private:
+    auto make_start(DP::msg_ptr_t msg, state_ptr_t state) {
+      return std::make_unique<start_t>(txn_name_, std::move(msg), std::move(state));
+    }
+
     state_ptr_t state_;
   };
 
   struct complete_txn_awaitable : transfer_txn_awaitable {
-    complete_txn_awaitable(handle_t handle, DP::msg_ptr_t msg) :
-      transfer_txn_awaitable(handle, std::move(msg)) {}
+    complete_txn_awaitable(std::string_view txn_name, handle_t handle, DP::msg_ptr_t msg) :
+      transfer_txn_awaitable(txn_name, handle, std::move(msg)) {}
 
     auto await_suspend(handle_t h) {
-      puts("start_txn_awaitable::await_suspend()");
+      puts(std::format("complete_txn_awaitable({})::await_suspend()", txn_name_).c_str());
       src_promise_ = &h.promise();
       auto & dst_p = dst_handle_.promise();
       dst_p.in_ = std::move(msg_);
@@ -232,8 +241,6 @@ namespace setprice {
   using promise_type = handler_t::promise_type;
   using msg_t = DP::Message::Data_t;
 
-//  using namespace dp::txn;
-
   auto process_txn_message(const DP::Message::Data_t& msg)
     // -> std::unique_ptr<DP::Message::Data_t>
   {
@@ -253,6 +260,7 @@ namespace setprice {
   // txn_complete are candidates for moving to dp::txn namespace
   auto txn_complete(promise_type& promise, DP::msg_ptr_t msg_ptr) {
     return dp::txn::complete_txn_awaitable{
+      setprice::txn::name,
       promise.prev_handle().value(),
       std::move(msg_ptr)
     };
@@ -263,52 +271,67 @@ namespace setprice {
   }
 
   auto txn_complete(promise_type& promise, result_code rc) {
-      return txn_complete(promise,
-        std::move(std::make_unique<DP::txn::complete_t>(txn::name, rc)));
+    if (rc != result_code::success) {
+      puts(std::format("setprice::txn_complete error: {}", (int)rc).c_str());
+      return txn_complete(promise, std::move(
+        std::make_unique<DP::txn::complete_t>(txn::name, rc)));
+    } else {
+      return txn_complete(promise, std::move(promise.in_));
+    }
   }
 
-  auto validate_message(const msg_t& msg) {
+  auto validate_message_name(const msg_t& msg, std::string_view msg_name) {
     result_code rc = result_code::success;
-    if (msg.msg_name != msg::name) {
-      puts("setprice::validate_message, message name mismatch");
-      rc = result_code::error; // start_txn_expected;
+    if (msg.msg_name != msg_name) {
+      puts(std::format("validate_message_name: name mismatch, expected({}), actual({})",
+        msg_name, msg.msg_name).c_str());
+      rc = result_code::unexpected_error;
     }
     return rc;
   }
-
-  auto validate_price(const promise_type& promise, int price) {
-    const auto& msg = *promise.in_.get();
-    result_code rc = validate_message(msg);
+    
+  template<typename T>
+  auto validate_message(const msg_t& msg, std::string_view msg_name) {
+    result_code rc = validate_message_name(msg, msg_name);
     if (rc == result_code::success) {
-      const msg::data_t* spmsg = dynamic_cast<const msg::data_t*>(&msg);
-      if (!spmsg) {
-        puts("setprice::validate_price: message type mismatch");
-        rc = result_code::error; // msg_type_mismatch (this is a biger deal isn't it)
-      } else if (spmsg->price != price) {
-        puts("setprice::validate_price: price mismatch");
-        rc = result_code::error; // price mismatch? (this is expected)
-      } else {
-        puts("setprice::validate_price: prices match");
+      if (!dynamic_cast<const T*>(&msg)) {
+        puts("validate_message: message type mismatch");
+        rc = result_code::unexpected_error;
       }
     }
     return rc;
   }
 
-  auto validate_complete(const promise_type& promise) {
-    result_code rc = result_code::success;
-    // const txn::state_t& state = promise.txn_handler
-    // check state.prev_msg_name == promise.in_->msg_name
-    if (promise.in_->msg_name != sellitem::msg::name) {
-      puts("set_price::validate_complete: message name mismatch");
-      rc = result_code::error;
-    } else {
-      puts("set_price::validate_complete: message name matches");
+  auto validate_txn_start(const msg_t& txn) {
+    result_code rc = validate_message<txn::start_t>(txn, DP::txn::name::start);
+    if (rc == result_code::success) {
+      // validate that the msg contained within is of type setprice::msg::data_t
+      rc = validate_message<msg::data_t>(txn::start_t::msg_from(txn), msg::name);
     }
     return rc;
   }
 
-  auto get_price(const promise_type& promise) {
-    return 2; // TODO: from state
+  auto validate_price(const msg_t& msg, int price) {
+    result_code rc = validate_message<msg::data_t>(msg, msg::name);
+    if (rc == result_code::success) {
+      const msg::data_t& spmsg = static_cast<const msg::data_t&>(msg);
+      if (spmsg.price != price) {
+        puts(std::format("setprice::validate_price: price mismatch, expected({}), actual({})",
+          price, spmsg.price).c_str());
+        rc = result_code::expected_error; // price mismatch? (this is expected)
+      } else {
+        puts(std::format("setprice::validate_price: prices match({})", price).c_str());
+      }
+    }
+    return rc;
+  }
+
+  auto validate_price(const promise_type& promise, int price) {
+    return validate_price(*promise.in_.get(), price);
+  }
+
+  auto validate_complete(const promise_type& promise, std::string_view msg_name) {
+    return validate_message_name(*promise.in_.get(), msg_name);
   }
 
   auto input_price(const promise_type& promise, int) {
@@ -321,93 +344,45 @@ namespace setprice {
 
   auto txn_handler() -> handler_t
   {
-    result_code rc = result_code::success;
-    auto error = [&rc]() noexcept { return rc != result_code::success; };
+    result_code rc{ result_code::success };
+    const auto& error = [&rc]() noexcept { return rc != result_code::success; };
     handler_t::awaitable event;
-    while (true) {
-      if (error()) {
-        puts(std::format("setprice::txn_handler error: {}", (int)rc).c_str());
-        // so maybe not all errors result in completing txn?
-        // should we retry the whole txn?
-        // more importantly if msg->msg_name is still setprice, completing doesn't
-        // seem right, so what to do?
-        co_await txn_complete(event.promise(), rc);
-        rc = result_code::success;
-      }
+    txn::state_t state;
+    bool first{ true };
 
-      puts(std::format("setprice::txn_handler before co_await").c_str());
-      auto& promise = co_await event;
-      // using price is optional here.  both price and state.price are in promise
-      int price = get_price(promise);
-      rc = validate_price(promise, price); // msg name, price contents vs. state
+    for (auto& promise = co_await event; true;) {
+      if (!first) {
+        puts(std::format("setprice::txn_handler before co_await").c_str());
+        co_await txn_complete(promise, rc);
+      }
+      first = false;
+      auto& txn = *promise.in_.get();
+      rc = validate_txn_start(txn);
+      if (error()) continue;
+      state = std::move(txn::start_t::state_from(txn));
+
+      const msg_t& msg = txn::start_t::msg_from(txn);
+      rc = validate_price(msg, state.price);
+      if (rc == result_code::unexpected_error) continue;
       //for (retry_t retry; error() && retry.allowed(); retry--) {
       if (error()) {
-        //const auto& promise =
-        co_yield input_price(promise, price);
-        rc = validate_price(promise, price);
+        co_yield input_price(promise, state.price);
+        rc = validate_price(promise, state.price);
         if (error()) continue;
       }
 
       co_yield click_ok();
-      rc = validate_complete(promise);  // sell_item should be "prev_msg_name" in state
-      if (error()) continue;
-
-      co_await txn_complete(promise);
+      rc = validate_complete(promise, state.prev_msg_name);
+      //if (error()) continue;
     }
   }
-
-  auto old_txn_handler() -> handler_t
-  {
-    handler_t::awaitable event;
-    while (true) {
-      puts(std::format("setprice::txn_handler before co_await").c_str());
-      const auto& promise = co_await event;
-      auto& msg = *promise.in_.get();
-      puts(std::format("setprice::txn_handler, in_ after co_await, msg_name: {}", msg.msg_name).c_str());
-      if (DP::is_txn_message(msg)) {
-        // wonder if i can use a single if constexpr() function to choose a path txn/msg here
-        auto result = process_txn_message(msg); // this could be member func of inner class of txn_handler
-        co_yield std::move(result);
-        // if is txn_complete, symmetric transfer back to previous
-      } else {
-        // TODO: this comes from promise->txn_handler->state
-        txn::state_t state;
-        auto result_ptr = process_message(msg, state); // this could be member func of inner class of txn_handler
-        if (result_ptr) {
-          auto& result = *result_ptr.get();
-          puts(std::format("  process_message, result: {}", result.msg_name).c_str());
-          if (DP::is_txn_message(result)) {
-            if (DP::is_complete_txn(result)) {
-              co_await dp::txn::complete_txn_awaitable{ promise.prev_handle().value(),
-                std::move(result_ptr) };
-            } else {
-              puts("unhandled txn message");
-            }
-          }
-          else {
-            co_yield std::move(result_ptr);
-          }
-        } else {
-          puts("  process_message, empty result");
-        }
-      }
-    }
-  }
-}
+} // namespace setprice
 
 namespace sellitem
 {
   using handler_t = dp::txn::handler_t;
   using promise_type = handler_t::promise_type;
   using msg_t = DP::Message::Data_t;
-
-  auto process_txn_message(const DP::Message::Data_t& msg)
-    // -> std::unique_ptr<DP::Message::Data_t>
-  {
-    puts(std::format("sellitem::process_txn_message: {}", msg.msg_name).c_str());
-    // todo: save state
-    return std::make_unique<DP::txn::data_t>("sellitem-txn-result", "balls");
-  }
 
   struct row_data_t {
     int index;
@@ -424,34 +399,16 @@ namespace sellitem
     return row_data;
   }
 
-  auto process_message(const DP::Message::Data_t& msg,
-    const txn::state_t& state)
-    -> DP::msg_ptr_t
-  {
-    puts(std::format("sellitem::process_message: {}", msg.msg_name).c_str());
-    auto row_data = get_matching_row(msg, state);
-
-    // if message.name == setprice, return txn_start::setprice
-    // BUT! we don't want to lose the cuurrent message either.
-    // how do we send two messages? (txn_start, set_price::data_t)
-    // seems we need promise.in_ to be a deque?
-/*
-    if (msg.msg_name == setprice::msg::name) {
-      setprice::txn::state_t setprice_state(sellitem::txn::name, state.item_price);
-      return std::make_unique<setprice::txn::start_t>(setprice::txn::name, setprice_state);
-      return msg;
-    }
-*/
-      return std::make_unique<DP::Message::Data_t>("sellitem-msg-result");
-  }
-  
   auto start_txn_setprice(handler_t::handle_t handle, promise_type& promise,
     const txn::state_t& sellitem_state)
   {
     auto setprice_state = std::make_unique<setprice::txn::state_t>(
       std::string(sellitem::msg::name), sellitem_state.item_price);
     return dp::txn::start_txn_awaitable<setprice::txn::state_t>{
-      handle, std::move(promise.in_), std::move(setprice_state),
+      setprice::txn::name,
+      handle,
+      std::move(promise.in_),
+      std::move(setprice_state)
     };
   }
 
@@ -459,7 +416,7 @@ namespace sellitem
   {
     setprice::handler_t setprice_handler{ setprice::txn_handler() };
     handler_t::awaitable event;
-    txn::state_t state{ "abc", 1 };
+    txn::state_t state{ "abc", 2 };
 
     while (true) {
       puts(std::format("sellitem::txn_handler, outer co_await").c_str());
