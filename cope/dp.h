@@ -32,8 +32,11 @@ namespace DP {
     }
 
     struct state_t {
-      int retry_count = 0;
-      int retry_max = 3;
+      state_t(const state_t& state) = delete;
+      state_t& operator=(const state_t& state) = delete;
+
+      std::string prev_msg_name;
+      int retries = 3;
     };
 
     // consider templatizing this (or start_t) with State, and specializing for void (no state)
@@ -46,33 +49,32 @@ namespace DP {
 
     template<typename State>
     struct start_t : data_t {
-      constexpr start_t(std::string_view txn_name, State st) :
-        data_t(name::start, txn_name),
-        state(st) {}
+      using state_ptr_t = std::unique_ptr<State>;
+      constexpr start_t(std::string_view txn_name, msg_ptr_t m, state_ptr_t s) :
+        data_t(name::start, txn_name), msg(std::move(m)), state(std::move(s)) {}
 
-      // should probably be a unique ptr and std::move it around
-      State state;
+      msg_ptr_t msg;
+      state_ptr_t state;
     };
 
     enum class result_code {
       success = 0,
-      error = 1
+      error = 1 // error_retry/retriable_error, error_?? unrecoverable_error
     };
 
-    // todo: T, -> reqires derives_from data_t 
-    template<result_code ResultCode>
-    struct result_t : data_t {
-      constexpr result_t(std::string_view txn_name) :
-        data_t(name::complete, txn_name) {}
+    // todo: T, -> reqires derives_from data_t ??
+    struct complete_t : data_t {
+      complete_t(std::string_view txn_name, result_code rc) :
+        data_t(name::complete, txn_name), code(rc) {}
 
-      result_code code = ResultCode;
+      result_code code;
     };
 
-    struct success_result_t : result_t<result_code::success> {
+    /*struct success_result_t : result_t {
       constexpr success_result_t(std::string_view txn_name) :
-        result_t(txn_name) {}
-    };
-  }
+        result_t(txn_name, result_code::success) {}
+    };*/
+  } // namespace txn
 
   constexpr auto is_txn_message(const Message::Data_t& msg) noexcept {
     return msg.msg_name.starts_with("txn");
@@ -91,4 +93,4 @@ namespace DP {
     return dynamic_cast<const txn::data_t&>(msg).txn_name;
   }
 
-}
+} // namespace DP

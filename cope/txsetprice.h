@@ -21,14 +21,9 @@ namespace setprice {
   namespace txn {
     inline constexpr std::string_view name{ "set_price" };
 
-    struct state_t : DP::txn::state_t {
-      state_t() = default;
-      state_t(int price) :
-        item_price(price)
-      {}
-      state_t(const state_t& state) = default;
-
-      int item_price;
+    struct state_t {
+      std::string prev_msg_name;
+      int price;
     };
 
     using start_t = DP::txn::start_t<state_t>;
