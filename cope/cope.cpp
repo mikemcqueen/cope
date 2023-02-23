@@ -22,23 +22,7 @@ namespace dp::txn {
     }
   };
 
-/*
-  template<typename T>
-  struct out_t
-  {
-    std::unique_ptr<T> out_;
-
-    std::suspend_never yield_value(std::unique_ptr<T> value) {
-      out_ = std::move(value);
-      puts(std::format("out_t::yield_value").c_str());
-      return {};
-    }
-  };
-*/
-
   struct message_in_t : in_t<DP::Message::Data_t> {};
-//  struct message_out_t : out_t<DP::Message::Data_t> {};
-//  struct message_inout_t : message_in_t, message_out_t {};
 
   class handler_t {
   public:
@@ -116,9 +100,8 @@ namespace dp::txn {
     ~handler_t() { if (coro_handle_) coro_handle_.destroy(); }
 
     handle_t handle() const noexcept { return coro_handle_; }
-    //std::string_view txn_name() const noexcept { return txn_name_; }
 
-    // this logic should be in an awaitable.
+    // TODO: this logic should be in an awaitable?
     [[nodiscard]] auto send_value(DP::msg_ptr_t value)
     {
       auto& ap = active_handle().promise();
@@ -136,12 +119,6 @@ namespace dp::txn {
       return std::move(rp.out_);
     }
 
-/*
-    [[nodiscard]] auto send_value(DP::msg_ptr_t value) {
-      return send_value(active_handle(), std::move(value));
-    }
-*/
-
   private:
     handle_t active_handle() const noexcept {
       return coro_handle_.promise().active_handle();
@@ -151,7 +128,6 @@ namespace dp::txn {
     }
 
     handle_t coro_handle_;
-    //std::string txn_name_;
   }; // struct handler_t
 
   struct transfer_txn_awaitable {
@@ -240,22 +216,6 @@ namespace setprice {
   using dp::txn::handler_t;
   using promise_type = handler_t::promise_type;
   using msg_t = DP::Message::Data_t;
-
-  auto process_txn_message(const DP::Message::Data_t& msg)
-    // -> std::unique_ptr<DP::Message::Data_t>
-  {
-    puts(std::format("setprice::process_txn_message: {}", msg.msg_name).c_str());
-    // todo: save state
-    return std::make_unique<DP::txn::data_t>("setprice-txn-result", "balls");
-  }
-
-  auto process_message(const DP::Message::Data_t& msg,
-    const txn::state_t& state)
-    -> std::unique_ptr<DP::Message::Data_t>
-  {
-    puts(std::format("setprice::process_message: {}", msg.msg_name).c_str());
-    return std::make_unique<DP::txn::complete_t>(txn::name, DP::txn::result_code::success);
-  }
 
   // txn_complete are candidates for moving to dp::txn namespace
   auto txn_complete(promise_type& promise, DP::msg_ptr_t msg_ptr) {
@@ -434,19 +394,10 @@ namespace sellitem
 
 int main()
 {
-    // 1. txn sell item. reset_state(). 
-    // 2. send message with wrong item name. resume.
-    // 2.5 send message with correct item name. resume.
-    // 3. return setprice::start_t with expected price.
-    // 4. push txn setprice. reset_state(). pause old? set to "active"?
-    // 5. send message with wrong price. resume.
-    // 6. send message with correct price. resume.
-    // 7. responds with complete_t or something like that.
-    // 8. pop setprice txn. send anything to prev txn here? set to "resume"?
-    // 9. 
     puts("---");
     dp::txn::handler_t tx_sell{ sellitem::txn_handler() };
-/*
+
+/* TODO
     sellitem::txn::state_t s1{"some item", 1};
     auto m1 = std::make_unique<sellitem::txn::start_t>(sellitem::txn::name, s1);
     // resume_with_value
