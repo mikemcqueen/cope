@@ -8,11 +8,8 @@ namespace setprice {
   namespace msg {
     constexpr std::string_view name{"set_price"};
 
-    struct data_t : public DP::Message::Data_t {
-      data_t(int p) :
-        DP::Message::Data_t(name),
-        price(p)
-      {}
+    struct data_t : public dp::msg::data_t {
+      data_t(int p) : dp::msg::data_t(name), price(p) {}
 
       int price;
     };
@@ -26,6 +23,6 @@ namespace setprice {
       int price;
     };
 
-    using start_t = DP::txn::start_t<state_t>;
+    using start_t = dp::txn::start_t<state_t>;
   }
 }

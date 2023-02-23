@@ -2,29 +2,21 @@
 
 #include <string_view>
 
-namespace DP {
-  template<size_t N>
-  struct string_literal {
-    constexpr string_literal(const char(&str)[N]) {
-      std::copy_n(str, N, value);
-    }
-    char value[N];
-  };
-
-  namespace Message {
-    struct Data_t {
+namespace dp {
+  namespace msg {
+    struct data_t {
       // These go in something like "TranslateData"
       //std::string window_name;
       //std::string type_name;
-      Data_t(std::string_view n) : msg_name(n) {}
-      virtual ~Data_t() {}
+      data_t(std::string_view n) : msg_name(n) {}
+      virtual ~data_t() {}
 
       std::string msg_name;
     };
   }
 
-  using msg_t = Message::Data_t;
-  using msg_ptr_t = std::unique_ptr<Message::Data_t>;
+  using msg_t = msg::data_t;
+  using msg_ptr_t = std::unique_ptr<msg_t>;
 
   namespace txn {
     namespace name {
@@ -41,9 +33,9 @@ namespace DP {
     };
 
     // consider templatizing this (or start_t) with State, and specializing for void (no state)
-    struct data_t : Message::Data_t {
+    struct data_t : msg::data_t {
       data_t(std::string_view msgName, std::string_view txnName) :
-        Message::Data_t(msgName), txn_name(txnName) {}
+        msg::data_t(msgName), txn_name(txnName) {}
 
       std::string txn_name;
     };
@@ -57,6 +49,8 @@ namespace DP {
         return *txn_start.msg.get();
       }
  
+      // getting state from a message usually precedes a move, therefore no const.
+      // maybe i should just have a move method
       static State& state_from(msg_t& txn) {
         start_t<State>& txn_start = dynamic_cast<start_t<State>&>(txn);
         return *txn_start.state.get();
@@ -65,14 +59,13 @@ namespace DP {
       constexpr start_t(std::string_view txn_name, msg_ptr_t m, state_ptr_t s) :
         data_t(name::start, txn_name), msg(std::move(m)), state(std::move(s)) {}
 
-
       msg_ptr_t msg;
       state_ptr_t state;
     };
 
     enum class result_code {
       success = 0,
-      expected_error, // error_retry/retriable_error, error_?? unrecoverable_error
+      expected_error,
       unexpected_error
     };
 
@@ -83,26 +76,21 @@ namespace DP {
 
       result_code code;
     };
-
-    /*struct success_result_t : result_t {
-      constexpr success_result_t(std::string_view txn_name) :
-        result_t(txn_name, result_code::success) {}
-    };*/
   } // namespace txn
 
-  constexpr auto is_txn_message(const Message::Data_t& msg) noexcept {
+  constexpr auto is_txn_message(const msg_t& msg) noexcept {
     return msg.msg_name.starts_with("txn");
   }
 
-  constexpr auto is_start_txn(const Message::Data_t& msg) {
+  constexpr auto is_start_txn(const msg_t& msg) {
     return msg.msg_name == txn::name::start;
   }
 
-  constexpr auto is_complete_txn(const Message::Data_t& msg) {
+  constexpr auto is_complete_txn(const msg_t& msg) {
     return msg.msg_name == txn::name::complete;
   }
 
-  constexpr auto get_txn_name(const Message::Data_t& msg) {
+  constexpr auto get_txn_name(const msg_t& msg) {
     // is this even safe? read up
     return dynamic_cast<const txn::data_t&>(msg).txn_name;
   }
