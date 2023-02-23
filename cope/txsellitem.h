@@ -28,5 +28,7 @@ namespace sellitem {
     };
 
     using start_t = dp::txn::start_t<state_t>;
+
+    auto handler() -> dp::txn::handler_t;
   }
 }
