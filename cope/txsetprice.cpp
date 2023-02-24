@@ -8,30 +8,6 @@ namespace setprice {
   using dp::msg_t;
   using promise_type = handler_t::promise_type;
 
-  // txn_complete are candidates for moving to dp::txn namespace
-  auto txn_complete(promise_type& promise, dp::msg_ptr_t msg_ptr) {
-    return dp::txn::complete_txn_awaitable{
-      setprice::txn::name,
-      promise.prev_handle().value(),
-      std::move(msg_ptr)
-    };
-  }
-
-  auto txn_complete(promise_type& promise) {
-    return txn_complete(promise, promise.in_ptr());
-  }
-
-  auto txn_complete(promise_type& promise, result_code rc) {
-    if (rc != result_code::success) {
-      log(std::format("setprice::txn_complete error: {}", (int)rc).c_str());
-      return txn_complete(promise, std::move(
-        std::make_unique<dp::txn::complete_t>(txn::name, rc)));
-    }
-    else {
-      return txn_complete(promise, std::move(promise.in_ptr()));
-    }
-  }
-
   auto validate_message_name(const msg_t& msg, std::string_view msg_name) {
     result_code rc = result_code::success;
     if (msg.msg_name != msg_name) {
@@ -102,13 +78,14 @@ namespace setprice {
       result_code rc{ result_code::success };
       const auto& error = [&rc]() noexcept { return rc != result_code::success; };
 
-      handler_t::awaitable event;
+      log("setprice::txn::handler startup");
+      handler_t::awaitable event(txn::name);
       bool first{ true };
       for (auto& promise = co_await event; true;) {
         if (!first) {
-          log(std::format("setprice::txn_handler before co_await").c_str());
+          log(std::format("setprice::txn::handler before txn::complete").c_str());
           // could put this in for(;;here) loop
-          co_await txn_complete(promise, rc);
+          co_await dp::txn::complete(promise, rc);
         }
         first = false;
         auto& txn = promise.in();

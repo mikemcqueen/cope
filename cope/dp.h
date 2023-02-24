@@ -12,10 +12,9 @@
 namespace dp {
   namespace msg {
     struct data_t {
-      // These go in something like "TranslateData"
-      //std::string window_name;
-      //std::string type_name;
       data_t(std::string_view n) : msg_name(n) {}
+      data_t(const data_t&) = delete;
+      data_t& operator=(const data_t&) = delete;
       virtual ~data_t() {}
 
       std::string msg_name;
@@ -48,19 +47,19 @@ namespace dp::txn {
     std::string txn_name;
   };
 
-  template<typename State>
+  template<typename stateT>
   struct start_t : data_t {
-    using state_ptr_t = std::unique_ptr<State>;
+    using state_ptr_t = std::unique_ptr<stateT>;
 
     static const msg_t& msg_from(const msg_t& txn) {
-      const start_t<State>& txn_start = dynamic_cast<const start_t<State>&>(txn);
+      const start_t<stateT>& txn_start = dynamic_cast<const start_t<stateT>&>(txn);
       return *txn_start.msg.get();
     }
  
     // getting state from a message usually precedes a move, therefore no const.
     // maybe i should just have a move method
-    static State& state_from(msg_t& txn) {
-      start_t<State>& txn_start = dynamic_cast<start_t<State>&>(txn);
+    static stateT& state_from(msg_t& txn) {
+      start_t<stateT>& txn_start = dynamic_cast<start_t<stateT>&>(txn);
       return *txn_start.state.get();
     }
 
@@ -92,28 +91,40 @@ namespace dp::txn {
     using handle_t = std::coroutine_handle<promise_type>;
 
     struct awaitable {
+      awaitable(std::string_view txn_name) : txn_name_(txn_name) {}
+
       bool await_ready() const { return false; }
-      void await_suspend(handle_t h) { promise_ = &h.promise(); }
+      void await_suspend(handle_t h) {
+        promise_ = &h.promise();
+        promise_->set_txn_name(txn_name_);
+      }
       promise_type& await_resume() const { return *promise_; }
 
       const promise_type& promise() const { return *promise_; }
       promise_type& promise() { return *promise_; }
     private:
-      promise_type* promise_;
+      promise_type* promise_ = nullptr;
+      std::string txn_name_;
     };
 
     struct promise_type {
-      handler_t::initial_awaitable initial_suspend() noexcept { return {}; }
+      initial_awaitable initial_suspend() noexcept { return {}; }
       std::suspend_always final_suspend() noexcept { return {}; }
-      auto /*handler_t*/ get_return_object() noexcept { return handler_t{ this }; }
+      auto get_return_object() noexcept { return handler_t{ this }; }
       void unhandled_exception() { throw; }
       void return_void() { throw std::runtime_error("co_return not allowed"); }
+      // TODO: return private awaitable w/o txn name?
       awaitable yield_value(dp::msg_ptr_t value) {
-        log(std::format("yield_value, value: {}", value.get()->msg_name).c_str());
+        log(std::format("{}::yield_value({})", txn_name(),
+          value.get()->msg_name).c_str());
         root_handle_.promise().emplace_out(std::move(value));
-        //log(std::format("yield_value, out_: {}", out_.get() ? out_.get()->msg_name : "empty").c_str());
-        return {};
+        //log(std::format("yield_value, out_: {}",
+        //  out_ptr() ? out().msg_name : "empty").c_str());
+        return { std::string_view(txn_name()) };
       }
+
+      const std::string& txn_name() { return txn_name_; }
+      void set_txn_name(const std::string& txn_name) { txn_name_ = txn_name; }
 
       auto active_handle() const { return active_handle_; }
       void set_active_handle(handle_t h) { active_handle_ = h; }
@@ -136,6 +147,7 @@ namespace dp::txn {
       void emplace_out(dp::msg_ptr_t value) { out_ = std::move(value); }
 
     private:
+      std::string txn_name_;
       handle_t active_handle_;
       handle_t root_handle_;
       std::optional<handle_t> prev_handle_; // TODO should be non-optional noop_coroutine<>();
@@ -160,39 +172,39 @@ namespace dp::txn {
     handler_t operator=(handler_t& other) = delete;
 
     explicit handler_t(promise_type* p) noexcept :
-      coro_handle_(handle_t::from_promise(*p)) { /*p->set_txn_handler(this);*/
-    }
+      coro_handle_(handle_t::from_promise(*p)) { /*p->set_txn_handler(this);*/ }
     ~handler_t() { if (coro_handle_) coro_handle_.destroy(); }
 
     handle_t handle() const noexcept { return coro_handle_; }
 
+  private:
+    auto active_handle() const noexcept { return coro_handle_.promise().active_handle(); }
+    auto root_handle() const noexcept { return coro_handle_.promise().root_handle(); }
+    auto& txn_name() const noexcept { return coro_handle_.promise().txn_name(); }
+
+  public:
     // TODO: this logic should be in an awaitable?
     [[nodiscard]] dp::msg_ptr_t&& send_value(dp::msg_ptr_t value)
     {
       auto& ap = active_handle().promise();
       ap.emplace_in(std::move(value));
-      log(std::format("send_value, emplace_in({})", ap.in().msg_name).c_str());
+      log(std::format("++{}::send_value, emplace_in({})", txn_name(),
+        ap.in().msg_name).c_str());
       active_handle().resume();
       auto& rp = root_handle().promise();
       if (rp.out_ptr()) {
-        log(std::format("send_value, out({})", rp.out().msg_name).c_str());
-      }
-      else {
-        log(std::format("send_value, out empty").c_str());
+        log(std::format("--{}::send_value, out({})", txn_name(),
+          rp.out().msg_name).c_str());
+      } else {
+        log(std::format("--{}::send_value, out empty", txn_name()).c_str());
       }
       return std::move(rp.out_ptr());
     }
-
   private:
-    handle_t active_handle() const noexcept {
-      return coro_handle_.promise().active_handle();
-    }
-    handle_t root_handle() const noexcept {
-      return coro_handle_.promise().root_handle();
-    }
-
     handle_t coro_handle_;
   }; // struct handler_t
+
+  using promise_type = handler_t::promise_type;
 
   struct transfer_txn_awaitable {
     using handle_t = handler_t::handle_t;
@@ -208,18 +220,28 @@ namespace dp::txn {
     }
   protected:
     handle_t dst_handle_;
-    std::string txn_name_;
+    std::string txn_name_; // TODO: do i still need this here? or in src_promise_?
     dp::msg_ptr_t msg_;
     handler_t::promise_type* src_promise_ = nullptr;
   };
 
-  template<typename State>
+  template<typename stateT>
+  struct start_txn_awaitable;
+    
+  template<typename stateT>
+  auto make_start_txn(std::string_view txn_name, dp::msg_ptr_t msg,
+    typename start_t<stateT>::state_ptr_t state)
+  {
+    return std::make_unique<start_t<stateT>>(txn_name, std::move(msg), std::move(state));
+  }
+
+  template<typename stateT>
   struct start_txn_awaitable : transfer_txn_awaitable {
-    using start_t = dp::txn::start_t<State>;
+    using start_t = dp::txn::start_t<stateT>;
     using state_ptr_t = start_t::state_ptr_t;
 
     start_txn_awaitable(std::string_view txn_name, handle_t& handle,
-      dp::msg_ptr_t msg, state_ptr_t state) :
+        dp::msg_ptr_t msg, state_ptr_t state) :
       transfer_txn_awaitable(txn_name, handle, std::move(msg)),
       state_(std::move(state)) {}
 
@@ -227,7 +249,7 @@ namespace dp::txn {
       log(std::format("start_txn_awaitable({})::await_suspend()", txn_name_).c_str());
       src_promise_ = &h.promise();
       auto& dst_p = dst_handle_.promise();
-      dst_p.emplace_in(make_start(std::move(msg_), std::move(state_)));
+      dst_p.emplace_in(make_start_txn<stateT>(txn_name_, std::move(msg_), std::move(state_)));
       log(std::format("  dst_p.emplace_in({})", dst_p.in().msg_name).c_str());
 
       dst_p.set_root_handle(src_promise_->root_handle());
@@ -237,12 +259,7 @@ namespace dp::txn {
 
       return dst_handle_; // symmetric transfer to dst
     }
-
   private:
-    auto make_start(dp::msg_ptr_t msg, state_ptr_t state) {
-      return std::make_unique<start_t>(txn_name_, std::move(msg), std::move(state));
-    }
-
     state_ptr_t state_;
   };
 
@@ -269,6 +286,11 @@ namespace dp::txn {
       return dst_handle_; // symmetric transfer to dst
     }
   };
+
+  complete_txn_awaitable complete(promise_type& promise, msg_ptr_t msg_ptr);
+  complete_txn_awaitable complete(promise_type& promise);
+  complete_txn_awaitable complete(promise_type& promise, result_code rc);
+
 } // namespace dp::txn
 
 // TODO: probably want to try to relocate this in above dp{} block
