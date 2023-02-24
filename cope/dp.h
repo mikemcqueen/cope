@@ -10,27 +10,64 @@
 #include "log.h"
 
 namespace dp {
+  enum class result_code {
+    success = 0,
+    expected_error,
+    unexpected_error
+  };
+
+  namespace msg { struct data_t; }
+
+  using msg_t = msg::data_t;
+  using msg_ptr_t = std::unique_ptr<msg_t>;
+
   namespace msg {
+    namespace name {
+      constexpr std::string_view txn_start = "txn::start";
+      constexpr std::string_view txn_complete = "txn::complete";
+    }
+
     struct data_t {
-      data_t(std::string_view n) : msg_name(n) {}
+      data_t(std::string_view name) : msg_name(name) {}
       data_t(const data_t&) = delete;
       data_t& operator=(const data_t&) = delete;
       virtual ~data_t() {}
 
       std::string msg_name;
     };
-  }
 
-  using msg_t = msg::data_t;
-  using msg_ptr_t = std::unique_ptr<msg_t>;
-}
+    auto validate_name(const msg_t& msg, std::string_view msg_name) -> result_code;
+
+    template<typename msgT>
+    auto validate(const msg_t& msg, std::string_view msg_name) {
+      result_code rc = validate_name(msg, msg_name);
+      if (rc == result_code::success) {
+        if (!dynamic_cast<const msgT*>(&msg)) {
+          log("msg::validate: type mismatch");
+          rc = result_code::unexpected_error;
+        }
+      }
+      return rc;
+    }
+
+    // TODO: this should take std::string_view txn_name, for completeness (and slowness)
+    template<typename startT, typename msgT>
+    auto validate_txn_start(const msg_t& txn, std::string_view txn_name,
+        std::string_view msg_name) {
+      // would call validate_txn() here
+      txn_name;
+      result_code rc = validate<startT>(txn, name::txn_start);
+      if (rc == result_code::success) {
+        // validate that the msg contained within is of supplied type and name
+        rc = validate<msgT>(startT::msg_from(txn), msg_name);
+      }
+      return rc;
+    }
+  } // namespace msg
+} // namespace dp
 
 namespace dp::txn {
-  namespace name {
-    constexpr std::string_view start = "txn_start";
-    constexpr std::string_view complete = "txn_complete";
-  }
-
+  /*
   struct state_t {
     state_t(const state_t& state) = delete;
     state_t& operator=(const state_t& state) = delete;
@@ -38,8 +75,8 @@ namespace dp::txn {
     std::string prev_msg_name;
     int retries = 3;
   };
+  */
 
-  // consider templatizing this (or start_t) with State, and specializing for void (no state)
   struct data_t : msg::data_t {
     data_t(std::string_view msgName, std::string_view txnName) :
       msg::data_t(msgName), txn_name(txnName) {}
@@ -52,7 +89,7 @@ namespace dp::txn {
     using state_ptr_t = std::unique_ptr<stateT>;
 
     static const msg_t& msg_from(const msg_t& txn) {
-      const start_t<stateT>& txn_start = dynamic_cast<const start_t<stateT>&>(txn);
+      /*const start_t<stateT>&*/auto& txn_start = dynamic_cast<const start_t<stateT>&>(txn);
       return *txn_start.msg.get();
     }
  
@@ -64,22 +101,16 @@ namespace dp::txn {
     }
 
     constexpr start_t(std::string_view txn_name, msg_ptr_t m, state_ptr_t s) :
-      data_t(name::start, txn_name), msg(std::move(m)), state(std::move(s)) {}
+      data_t(msg::name::txn_start, txn_name), msg(std::move(m)), state(std::move(s)) {}
 
     msg_ptr_t msg;
     state_ptr_t state;
   };
 
-  enum class result_code {
-    success = 0,
-    expected_error,
-    unexpected_error
-  };
-
   // todo: T, -> reqires derives_from data_t ??
   struct complete_t : data_t {
     complete_t(std::string_view txn_name, result_code rc) :
-      data_t(name::complete, txn_name), code(rc) {}
+      data_t(msg::name::txn_complete, txn_name), code(rc) {}
 
     result_code code;
   };
@@ -139,6 +170,10 @@ namespace dp::txn {
       //void set_txn_handler(handler_t* handler) { txn_handler_ = handler; }
 
       auto& in() const { return *in_.get(); }
+      template<typename T> const T& in_as() const {
+        // dynamic? i mean, i know when it's safe, but read up perf vs. best practice downcast
+        return *static_cast<const T*>(in_.get());
+      }
       dp::msg_ptr_t&& in_ptr() { return std::move(in_); }
       void emplace_in(dp::msg_ptr_t value) { in_ = std::move(value); }
 
@@ -147,21 +182,20 @@ namespace dp::txn {
       void emplace_out(dp::msg_ptr_t value) { out_ = std::move(value); }
 
     private:
-      std::string txn_name_;
-      handle_t active_handle_;
       handle_t root_handle_;
-      std::optional<handle_t> prev_handle_; // TODO should be non-optional noop_coroutine<>();
+      handle_t active_handle_;
+      std::optional<handle_t> prev_handle_;
+      std::string txn_name_;
       dp::msg_ptr_t in_;
       dp::msg_ptr_t out_;
-      //handler_t* txn_handler_;
     };
 
     struct initial_awaitable {
       bool await_ready() { return false; }
       bool await_suspend(handle_t h) {
         log("initial_awaitable::await_suspend()");
-        h.promise().set_active_handle(h);
         h.promise().set_root_handle(h);
+        h.promise().set_active_handle(h);
         return false;
       }
       void await_resume() { /* will never be called */ }
@@ -209,9 +243,13 @@ namespace dp::txn {
   struct transfer_txn_awaitable {
     using handle_t = handler_t::handle_t;
 
-    transfer_txn_awaitable(std::string_view txn_name, handle_t handle,
-      dp::msg_ptr_t msg) :
-      dst_handle_(handle), txn_name_(txn_name), msg_(std::move(msg)) {}
+    transfer_txn_awaitable(std::string_view txn_name, std::optional<handle_t> dst_handle,
+        dp::msg_ptr_t msg) :
+      dst_handle_(dst_handle), txn_name_(txn_name), msg_(std::move(msg)) {}
+
+    transfer_txn_awaitable(std::string_view txn_name, handle_t dst_handle,
+        dp::msg_ptr_t msg) :
+      transfer_txn_awaitable(txn_name, std::optional(dst_handle), std::move(msg)) {}
 
     auto await_ready() { return false; }
     auto& await_resume() {
@@ -219,10 +257,10 @@ namespace dp::txn {
       return *src_promise_;
     }
   protected:
-    handle_t dst_handle_;
+    handler_t::promise_type* src_promise_ = nullptr;
+    std::optional<handle_t> dst_handle_;
     std::string txn_name_; // TODO: do i still need this here? or in src_promise_?
     dp::msg_ptr_t msg_;
-    handler_t::promise_type* src_promise_ = nullptr;
   };
 
   template<typename stateT>
@@ -240,7 +278,7 @@ namespace dp::txn {
     using start_t = dp::txn::start_t<stateT>;
     using state_ptr_t = start_t::state_ptr_t;
 
-    start_txn_awaitable(std::string_view txn_name, handle_t& handle,
+    start_txn_awaitable(std::string_view txn_name, handle_t handle,
         dp::msg_ptr_t msg, state_ptr_t state) :
       transfer_txn_awaitable(txn_name, handle, std::move(msg)),
       state_(std::move(state)) {}
@@ -248,68 +286,59 @@ namespace dp::txn {
     auto await_suspend(handle_t h) {
       log(std::format("start_txn_awaitable({})::await_suspend()", txn_name_).c_str());
       src_promise_ = &h.promise();
-      auto& dst_p = dst_handle_.promise();
+      auto& dst_p = dst_handle_->promise();
       dst_p.emplace_in(make_start_txn<stateT>(txn_name_, std::move(msg_), std::move(state_)));
       log(std::format("  dst_p.emplace_in({})", dst_p.in().msg_name).c_str());
-
       dst_p.set_root_handle(src_promise_->root_handle());
       dst_p.set_prev_handle(src_promise_->active_handle());
       auto& root_p = src_promise_->root_handle().promise();
       root_p.set_active_handle(dst_p.active_handle());
-
-      return dst_handle_; // symmetric transfer to dst
+      return dst_handle_.value(); // symmetric transfer to dst
     }
   private:
     state_ptr_t state_;
   };
 
   struct complete_txn_awaitable : transfer_txn_awaitable {
-    complete_txn_awaitable(std::string_view txn_name, handle_t handle, dp::msg_ptr_t msg) :
+    complete_txn_awaitable(std::string_view txn_name,
+        std::optional<handle_t> handle, dp::msg_ptr_t msg) :
       transfer_txn_awaitable(txn_name, handle, std::move(msg)) {}
 
-    auto await_suspend(handle_t h) {
+    std::coroutine_handle<> await_suspend(handle_t h) {
       log(std::format("complete_txn_awaitable({})::await_suspend()", txn_name_).c_str());
       src_promise_ = &h.promise();
-      auto& dst_p = dst_handle_.promise();
-      dst_p.emplace_in(std::move(msg_));
-      log(std::format("  dst_p.emplace_in({})", dst_p.in().msg_name).c_str());
-      // todo: fix this comment. we just use src->prev because:
-      // note there is some funny business here. because we are not storing
-      // the "actual handle" in a promise, we infer that active_handle is the
-      // "actual handle", which is true for all cases except root handle,
-      // where, the root_handle the "actual". we can tell when we're at the
-      // root because there is no prev_handle.
-      auto& root_p = src_promise_->root_handle().promise();
-      root_p.set_active_handle(src_promise_->prev_handle().value());
-      src_promise_->prev_handle().reset();
-
-      return dst_handle_; // symmetric transfer to dst
+      if (dst_handle_.has_value()) {
+        auto& dst_p = dst_handle_->promise();
+        dst_p.emplace_in(std::move(msg_));
+        log(std::format("  dst_p.emplace_in({})", dst_p.in().msg_name).c_str());
+        auto& root_p = src_promise_->root_handle().promise();
+        root_p.set_active_handle(dst_handle_.value());
+        src_promise_->prev_handle().reset();
+        return dst_handle_.value(); // symmetric transfer to dst
+      } else {
+        log("  return noop_coroutine()");
+        return std::noop_coroutine();
+      }
     }
   };
 
   complete_txn_awaitable complete(promise_type& promise, msg_ptr_t msg_ptr);
   complete_txn_awaitable complete(promise_type& promise);
   complete_txn_awaitable complete(promise_type& promise, result_code rc);
-
 } // namespace dp::txn
 
 // TODO: probably want to try to relocate this in above dp{} block
 namespace dp {
-  constexpr auto is_txn_message(const msg_t& msg) noexcept {
-    return msg.msg_name.starts_with("txn");
-  }
-
   constexpr auto is_start_txn(const msg_t& msg) {
-    return msg.msg_name == txn::name::start;
+    return msg.msg_name == msg::name::txn_start;
   }
-
+  /*
   constexpr auto is_complete_txn(const msg_t& msg) {
-    return msg.msg_name == txn::name::complete;
+    return msg.msg_name == msg::name::txn_complete;
   }
 
   constexpr auto get_txn_name(const msg_t& msg) {
-    const txn::data_t* txn = dynamic_cast<const txn::data_t*>(&msg);
-    assert(txn);
-    return txn->txn_name;
+    dynamic_cast<const txn::data_t&>(msg).txn_name;
   }
+  */
 } // namespace dp::txn

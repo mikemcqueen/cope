@@ -6,7 +6,7 @@
 #include "txsetprice.h"
 #include "txsellitem.h"
 
-dp::msg_ptr_t&& start_txn_sellitem(dp::txn::handler_t& tx_sell,
+dp::msg_ptr_t start_txn_sellitem(dp::txn::handler_t& tx_sell,
   const sellitem::msg::data_t::row_vector& rows)
 {
   using namespace sellitem;
@@ -39,22 +39,25 @@ int main()
   };
 
   dp::txn::handler_t tx_sell{ sellitem::txn::handler() };
-//  start_txn_sellitem(tx_sell, rows_page_1);
+  start_txn_sellitem(tx_sell, rows_page_1);
 
   int max = 1; 0'000;
   if (max > 1) logging_enabled = false;
   auto start = high_resolution_clock::now();
   for (auto i = 0; i < max; ++i) {
     log("---");
+
+    sellitem::msg::data_t::row_vector rows_copy = rows_page_1;
+    rows_copy[0].selected = true;
+    auto m0 = std::make_unique<sellitem::msg::data_t>(std::move(rows_copy));
+    auto r0 = tx_sell.send_value(std::move(m0));
+
     auto m1 = std::make_unique<setprice::msg::data_t>(1);
     auto r1 = tx_sell.send_value(std::move(m1));
 
     auto m2 = std::make_unique<setprice::msg::data_t>(2);
     auto r2 = tx_sell.send_value(std::move(m2));
 
-    sellitem::msg::data_t::row_vector rows_copy = rows_page_1;
-    auto m3 = std::make_unique<sellitem::msg::data_t>(std::move(rows_copy));
-    auto r3 = tx_sell.send_value(std::move(m3));
   }
   auto end = std::chrono::high_resolution_clock::now();
   double elapsed = 1e-9 * duration_cast<nanoseconds>(end - start).count();

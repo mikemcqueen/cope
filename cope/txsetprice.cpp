@@ -3,7 +3,7 @@
 #include "txsetprice.h"
 
 namespace setprice {
-  using dp::txn::result_code;
+  using dp::result_code;
   using dp::txn::handler_t;
   using dp::msg_t;
   using promise_type = handler_t::promise_type;
@@ -31,7 +31,7 @@ namespace setprice {
   }
 
   auto validate_txn_start(const msg_t& txn) {
-    result_code rc = validate_message<txn::start_t>(txn, dp::txn::name::start);
+    result_code rc = validate_message<txn::start_t>(txn, dp::msg::name::txn_start);
     if (rc == result_code::success) {
       // validate that the msg contained within is of type setprice::msg::data_t
       rc = validate_message<msg::data_t>(txn::start_t::msg_from(txn), msg::name);
@@ -83,7 +83,8 @@ namespace setprice {
       bool first{ true };
       for (auto& promise = co_await event; true;) {
         if (!first) {
-          log(std::format("setprice::txn::handler before txn::complete").c_str());
+          log(std::format("setprice::txn::handler before txn::complete, "
+            "error({})", (int)rc).c_str());
           // could put this in for(;;here) loop
           co_await dp::txn::complete(promise, rc);
         }
@@ -98,6 +99,7 @@ namespace setprice {
         if (rc == result_code::unexpected_error) continue;
         //for (retry_t retry; error() && retry.allowed(); retry--) {
         if (error()) {
+          // NOTE: promise here doesn't contain a msg::data_t, (msg does)
           co_yield input_price(promise, state.price);
           rc = validate_price(promise, state.price);
           if (error()) continue;
