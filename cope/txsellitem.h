@@ -7,7 +7,7 @@
 
 namespace sellitem {
   namespace msg {
-    inline constexpr std::string_view name{ "broker_sell_tab" };
+    inline constexpr std::string_view name{ "msg::broker_sell_tab" };
 
     struct row_data_t {
       std::string item_name;
@@ -40,7 +40,7 @@ namespace sellitem {
   } // namespace msg
 
   namespace txn {
-    inline constexpr std::string_view name{ "sell_item" };
+    inline constexpr std::string_view name{ "txn::sell_item" };
 
     struct state_t {
       // state_t(const state_t& state) = delete;
@@ -50,13 +50,12 @@ namespace sellitem {
       int item_price;
     };
 
-
     using start_t = dp::txn::start_t<state_t>;
 
     auto handler() -> dp::txn::handler_t;
 
     inline auto validate_start(const dp::msg_t& txn) {
-      return dp::msg::validate_txn_start<start_t, msg::data_t>(txn, name, msg::name);
+      return dp::txn::validate_start<start_t, msg::data_t>(txn, name, msg::name);
     }
   } // namespace txn
 } // namespace sellitem

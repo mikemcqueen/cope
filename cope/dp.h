@@ -4,7 +4,7 @@
 #include <coroutine>
 #include <format>
 #include <memory>
-#include <optional> // TODO: remove
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 #include "log.h"
@@ -23,8 +23,8 @@ namespace dp {
 
   namespace msg {
     namespace name {
-      constexpr std::string_view txn_start = "txn::start";
-      constexpr std::string_view txn_complete = "txn::complete";
+      constexpr std::string_view txn_start = "msg::txn_start";
+      constexpr std::string_view txn_complete = "msg::txn_complete";
     }
 
     struct data_t {
@@ -49,34 +49,10 @@ namespace dp {
       }
       return rc;
     }
-
-    // TODO: this should take std::string_view txn_name, for completeness (and slowness)
-    template<typename startT, typename msgT>
-    auto validate_txn_start(const msg_t& txn, std::string_view txn_name,
-        std::string_view msg_name) {
-      // would call validate_txn() here
-      txn_name;
-      result_code rc = validate<startT>(txn, name::txn_start);
-      if (rc == result_code::success) {
-        // validate that the msg contained within is of supplied type and name
-        rc = validate<msgT>(startT::msg_from(txn), msg_name);
-      }
-      return rc;
-    }
   } // namespace msg
 } // namespace dp
 
 namespace dp::txn {
-  /*
-  struct state_t {
-    state_t(const state_t& state) = delete;
-    state_t& operator=(const state_t& state) = delete;
-
-    std::string prev_msg_name;
-    int retries = 3;
-  };
-  */
-
   struct data_t : msg::data_t {
     data_t(std::string_view msgName, std::string_view txnName) :
       msg::data_t(msgName), txn_name(txnName) {}
@@ -89,12 +65,12 @@ namespace dp::txn {
     using state_ptr_t = std::unique_ptr<stateT>;
 
     static const msg_t& msg_from(const msg_t& txn) {
-      /*const start_t<stateT>&*/auto& txn_start = dynamic_cast<const start_t<stateT>&>(txn);
+      auto& txn_start = dynamic_cast<const start_t<stateT>&>(txn);
       return *txn_start.msg.get();
     }
  
     // getting state from a message usually precedes a move, therefore no const.
-    // maybe i should just have a move method
+    // maybe this should just be move_state(txn, stateT*)
     static stateT& state_from(msg_t& txn) {
       start_t<stateT>& txn_start = dynamic_cast<start_t<stateT>&>(txn);
       return *txn_start.state.get();
@@ -146,11 +122,9 @@ namespace dp::txn {
       void return_void() { throw std::runtime_error("co_return not allowed"); }
       // TODO: return private awaitable w/o txn name?
       awaitable yield_value(dp::msg_ptr_t value) {
-        log(std::format("{}::yield_value({})", txn_name(),
-          value.get()->msg_name).c_str());
+        log(std::format("Yielding {} from {}...", value.get()->msg_name,
+          txn_name()));
         root_handle_.promise().emplace_out(std::move(value));
-        //log(std::format("yield_value, out_: {}",
-        //  out_ptr() ? out().msg_name : "empty").c_str());
         return { std::string_view(txn_name()) };
       }
 
@@ -171,8 +145,7 @@ namespace dp::txn {
 
       auto& in() const { return *in_.get(); }
       template<typename T> const T& in_as() const {
-        // dynamic? i mean, i know when it's safe, but read up perf vs. best practice downcast
-        return *static_cast<const T*>(in_.get());
+        return *dynamic_cast<const T*>(in_.get());
       }
       dp::msg_ptr_t&& in_ptr() { return std::move(in_); }
       void emplace_in(dp::msg_ptr_t value) { in_ = std::move(value); }
@@ -190,6 +163,7 @@ namespace dp::txn {
       dp::msg_ptr_t out_;
     };
 
+    // TODO: private?
     struct initial_awaitable {
       bool await_ready() { return false; }
       bool await_suspend(handle_t h) {
@@ -220,19 +194,16 @@ namespace dp::txn {
     // TODO: this logic should be in an awaitable?
     [[nodiscard]] dp::msg_ptr_t&& send_value(dp::msg_ptr_t value)
     {
-      auto& ap = active_handle().promise();
-      ap.emplace_in(std::move(value));
-      log(std::format("++{}::send_value, emplace_in({})", txn_name(),
-        ap.in().msg_name).c_str());
+      auto& active_p = active_handle().promise();
+      active_p.emplace_in(std::move(value));
+      log(std::format("Sending {} to {}", active_p.in().msg_name,
+        active_p.txn_name()));
       active_handle().resume();
-      auto& rp = root_handle().promise();
-      if (rp.out_ptr()) {
-        log(std::format("--{}::send_value, out({})", txn_name(),
-          rp.out().msg_name).c_str());
-      } else {
-        log(std::format("--{}::send_value, out empty", txn_name()).c_str());
-      }
-      return std::move(rp.out_ptr());
+      auto& root_p = root_handle().promise();
+      log(std::format("Received {} from {}", root_p.out_ptr() ?
+        root_p.out().msg_name.c_str() : "nothing",
+        active_handle().promise().txn_name())); // active_handle() may have chnaged
+      return std::move(root_p.out_ptr());
     }
   private:
     handle_t coro_handle_;
@@ -243,23 +214,20 @@ namespace dp::txn {
   struct transfer_txn_awaitable {
     using handle_t = handler_t::handle_t;
 
-    transfer_txn_awaitable(std::string_view txn_name, std::optional<handle_t> dst_handle,
-        dp::msg_ptr_t msg) :
-      dst_handle_(dst_handle), txn_name_(txn_name), msg_(std::move(msg)) {}
+    transfer_txn_awaitable(std::optional<handle_t> dst_handle, dp::msg_ptr_t msg) :
+      dst_handle_(dst_handle), msg_(std::move(msg)) {}
 
-    transfer_txn_awaitable(std::string_view txn_name, handle_t dst_handle,
-        dp::msg_ptr_t msg) :
-      transfer_txn_awaitable(txn_name, std::optional(dst_handle), std::move(msg)) {}
+    transfer_txn_awaitable(handle_t dst_handle, dp::msg_ptr_t msg) :
+      transfer_txn_awaitable(std::make_optional(dst_handle), std::move(msg)) {}
 
     auto await_ready() { return false; }
     auto& await_resume() {
-      log(std::format("transfer_txn_awaitable({})::await_resume()", txn_name_).c_str());
+      log(std::format("Resuming {}...", src_promise_->txn_name()));
       return *src_promise_;
     }
   protected:
     handler_t::promise_type* src_promise_ = nullptr;
     std::optional<handle_t> dst_handle_;
-    std::string txn_name_; // TODO: do i still need this here? or in src_promise_?
     dp::msg_ptr_t msg_;
   };
 
@@ -278,17 +246,18 @@ namespace dp::txn {
     using start_t = dp::txn::start_t<stateT>;
     using state_ptr_t = start_t::state_ptr_t;
 
-    start_txn_awaitable(std::string_view txn_name, handle_t handle,
-        dp::msg_ptr_t msg, state_ptr_t state) :
-      transfer_txn_awaitable(txn_name, handle, std::move(msg)),
-      state_(std::move(state)) {}
+    start_txn_awaitable(handle_t handle, dp::msg_ptr_t msg, state_ptr_t state) :
+      transfer_txn_awaitable(handle, std::move(msg)), state_(std::move(state)) {}
 
     auto await_suspend(handle_t h) {
-      log(std::format("start_txn_awaitable({})::await_suspend()", txn_name_).c_str());
       src_promise_ = &h.promise();
+      log(std::format("start_txn_awaitable: Suspending {}...",
+        src_promise_->txn_name()));
       auto& dst_p = dst_handle_->promise();
-      dst_p.emplace_in(make_start_txn<stateT>(txn_name_, std::move(msg_), std::move(state_)));
-      log(std::format("  dst_p.emplace_in({})", dst_p.in().msg_name).c_str());
+      dst_p.emplace_in(make_start_txn<stateT>(dst_p.txn_name(), std::move(msg_),
+        std::move(state_)));
+      log(std::format("  sending a {} to {}", dst_p.in().msg_name,
+        dst_p.txn_name()));
       dst_p.set_root_handle(src_promise_->root_handle());
       dst_p.set_prev_handle(src_promise_->active_handle());
       auto& root_p = src_promise_->root_handle().promise();
@@ -300,17 +269,18 @@ namespace dp::txn {
   };
 
   struct complete_txn_awaitable : transfer_txn_awaitable {
-    complete_txn_awaitable(std::string_view txn_name,
-        std::optional<handle_t> handle, dp::msg_ptr_t msg) :
-      transfer_txn_awaitable(txn_name, handle, std::move(msg)) {}
+    complete_txn_awaitable(std::optional<handle_t> handle, dp::msg_ptr_t msg) :
+      transfer_txn_awaitable(handle, std::move(msg)) {}
 
     std::coroutine_handle<> await_suspend(handle_t h) {
-      log(std::format("complete_txn_awaitable({})::await_suspend()", txn_name_).c_str());
       src_promise_ = &h.promise();
+      log(std::format("complete_txn_awaitable: Suspending {}...",
+        src_promise_->txn_name()));
       if (dst_handle_.has_value()) {
         auto& dst_p = dst_handle_->promise();
         dst_p.emplace_in(std::move(msg_));
-        log(std::format("  dst_p.emplace_in({})", dst_p.in().msg_name).c_str());
+        log(std::format("  returning a {} to {}", dst_p.in().msg_name,
+          dst_p.txn_name()));
         auto& root_p = src_promise_->root_handle().promise();
         root_p.set_active_handle(dst_handle_.value());
         src_promise_->prev_handle().reset();
@@ -325,9 +295,23 @@ namespace dp::txn {
   complete_txn_awaitable complete(promise_type& promise, msg_ptr_t msg_ptr);
   complete_txn_awaitable complete(promise_type& promise);
   complete_txn_awaitable complete(promise_type& promise, result_code rc);
+
+  // TODO: this should validate txn_name, for completeness (and slowness)
+  template<typename startT, typename msgT>
+  auto validate_start(const msg_t& txn, std::string_view txn_name,
+    std::string_view msg_name) {
+    // would call txn::validate(txn, txn_name) here instead
+    txn_name;
+    result_code rc = msg::validate<startT>(txn, msg::name::txn_start);
+    if (rc == result_code::success) {
+      // validate that the msg contained within is of supplied type and name
+      rc = msg::validate<msgT>(startT::msg_from(txn), msg_name);
+    }
+    return rc;
+  }
 } // namespace dp::txn
 
-// TODO: probably want to try to relocate this in above dp{} block
+// TODO: probably want to put this in a dp::msg{} block
 namespace dp {
   constexpr auto is_start_txn(const msg_t& msg) {
     return msg.msg_name == msg::name::txn_start;
@@ -336,9 +320,5 @@ namespace dp {
   constexpr auto is_complete_txn(const msg_t& msg) {
     return msg.msg_name == msg::name::txn_complete;
   }
-
-  constexpr auto get_txn_name(const msg_t& msg) {
-    dynamic_cast<const txn::data_t&>(msg).txn_name;
-  }
   */
-} // namespace dp::txn
+} // namespace dp

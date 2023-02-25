@@ -56,7 +56,7 @@ int main()
   if (max > 1) logging_enabled = false;
   auto start = high_resolution_clock::now();
   for (auto row_index = 0; row_index < rows_page_1.size(); ++row_index) {
-    log(std::format("---ROW {}---", row_index).c_str());
+    log(std::format("---ROW {}---", row_index));
 
     auto& row = rows_page_1[row_index];
     if (row.item_name != "magic beans") continue;
@@ -66,7 +66,7 @@ int main()
 
     if (!row.selected) {
       assert(out && out->msg_name == std::format("click_row({})", row_index));
-      log(std::format("CLICK_ROW({})", row_index).c_str());
+      log(std::format("CLICK_ROW({})", row_index));
       row.selected = true;
       rows_copy = rows_page_1;
       auto in = std::make_unique<sellitem::msg::data_t>(std::move(rows_copy));
@@ -79,7 +79,7 @@ int main()
       auto m1 = std::make_unique<setprice::msg::data_t>(row.price);
       out = tx_sell.send_value(std::move(m1));
 
-      assert(out && out->msg_name == "input_price");
+      assert(out && out->msg_name == "input_price(2)");
       row.price = 2;
       auto m2 = std::make_unique<setprice::msg::data_t>(row.price);
       out = tx_sell.send_value(std::move(m2));
