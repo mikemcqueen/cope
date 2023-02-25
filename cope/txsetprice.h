@@ -12,6 +12,10 @@ namespace setprice {
 
       int price;
     };
+
+    inline auto validate(const dp::msg_t& msg) {
+      return dp::msg::validate<data_t>(msg, name);
+    }
   }
 
   namespace txn {

@@ -33,7 +33,11 @@ namespace sellitem {
       std::vector<row_data_t> rows;
       std::optional<int> selected_row;
     };
-  }
+
+    inline auto validate(const dp::msg_t& msg) {
+      return dp::msg::validate<data_t>(msg, name);
+    }
+  } // namespace msg
 
   namespace txn {
     inline constexpr std::string_view name{ "sell_item" };
@@ -46,8 +50,13 @@ namespace sellitem {
       int item_price;
     };
 
+
     using start_t = dp::txn::start_t<state_t>;
 
     auto handler() -> dp::txn::handler_t;
-  }
-}
+
+    inline auto validate_start(const dp::msg_t& txn) {
+      return dp::msg::validate_txn_start<start_t, msg::data_t>(txn, name, msg::name);
+    }
+  } // namespace txn
+} // namespace sellitem

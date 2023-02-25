@@ -9,6 +9,9 @@ namespace sellitem
   using dp::txn::handler_t;
   using promise_type = handler_t::promise_type;
 
+  namespace msg {
+  } // namespace msg
+  
 //  template<typename T>
   auto& get_row(const promise_type& promise, int row_index) {
     if (dp::is_start_txn(promise.in())) {
@@ -43,6 +46,7 @@ namespace sellitem
     -> std::optional<int>
   {
     using result_t = std::optional<int>;
+    /*
     // check selected row first, less work to do
     int selected_row = -1;
     if (msg.selected_row.has_value()) {
@@ -52,8 +56,9 @@ namespace sellitem
         return result_t(selected_row);
       }
     }
+    */
     for (auto row = 0; row < msg.rows.size(); ++row) {
-      if (row == selected_row) continue;
+      //if (row == selected_row) continue;
       if (is_candidate_row(msg, state, row)) {
         log(std::format("candidate row ({})", row).c_str());
         return result_t(row);
@@ -82,19 +87,16 @@ namespace sellitem
     };
   }
 
-  auto click_row(const promise_type& promise, int row_index) {
-    promise;
+  auto click_row(int row_index) {
     return std::make_unique<msg_t>(std::format("click_row({})", row_index));
   }
 
-  auto click_setprice(const promise_type& promise, int row_index) {
-    promise;
-    return std::make_unique<msg_t>(std::format("click_setprice({})", row_index));
+  auto click_setprice() {
+    return std::make_unique<msg_t>("click_setprice");
   }
 
-  auto click_listed(const promise_type& promise, int row_index) {
-    promise;
-    return std::make_unique<msg_t>(std::format("click_listed({})", row_index));
+  auto click_listitem() {
+    return std::make_unique<msg_t>("click_listitem");
   }
 
   namespace txn {
@@ -102,7 +104,8 @@ namespace sellitem
       using dp::result_code;
 
       result_code rc{ result_code::success };
-      const auto& error = [&rc]() noexcept {
+      const auto& error = [&rc](result_code new_rc) noexcept {
+        rc = new_rc;
         const auto error = (rc != result_code::success);
         if (error) log(std::format("  txn::sellitem error({})", (int)rc).c_str());
         return error;
@@ -134,43 +137,48 @@ namespace sellitem
         first = false;
 
         auto& txn = promise.in();
-        rc = dp::msg::validate_txn_start<txn::start_t, msg::data_t>(txn, txn::name, msg::name);
-        if (error()) continue;
-        state = std::move(txn::start_t::state_from(txn));
-        auto& msg = static_cast<const msg::data_t&>(txn::start_t::msg_from(txn));
+        if (error(txn::validate_start(txn))) continue;
+        state = std::move(start_t::state_from(txn));
+        auto& msg = static_cast<const msg::data_t&>(start_t::msg_from(txn));
         auto first2 = true;
         for(auto opt_row = get_candidate_row(msg, state);
-          (rc != result_code::unexpected_error) && opt_row.has_value();)
+          (rc != result_code::unexpected_error) && opt_row.has_value();
+          opt_row = get_candidate_row(promise, state))
         {
-          if (!first2) opt_row = get_candidate_row(promise, state);
+          //if (!first2) opt_row = get_candidate_row(promise, state);
           first2 = false;
 
-         auto row_index = opt_row.value();
-          if (auto& row = get_row(promise, row_index);  !row.selected) {
-            // NOTE: promise here **may** not contain a msg::data_t, (msg does)
-            co_yield click_row(promise, row_index);
+          auto row_index = opt_row.value();
+          if (auto& row = get_row(promise, row_index);
+            !row.selected)
+          {
+            co_yield click_row(row_index);
             //rc = validate_row(promise, row_index, { .selected{true} });
-            rc = dp::msg::validate<msg::data_t>(promise.in(), msg::name);
-            if (error()) continue;
+            if (error(msg::validate(promise.in()))) continue;
             // msg = promise.in_as<msg::data_t>();
             // row = msg->rows.at(row_index)
           }
-          if (auto& row = get_row(promise, row_index); row.price != state.item_price) {
-            co_yield click_setprice(promise, row_index);
-            //rc = validate_row(promise, row_index, { .selected{true} });
-            rc = dp::msg::validate<setprice::msg::data_t>(promise.in(), setprice::msg::name);
-            if (error()) continue;
-
+          if (auto& row = get_row(promise, row_index);
+            row.price != state.item_price)
+          {
+            co_yield click_setprice();
+            if (error(setprice::msg::validate(promise.in()))) continue;
             auto& txn_p = co_await start_txn_setprice(setprice_handler.handle(),
               promise, state);
             // move this to awaitable?
             log(std::format("txn_result, msg_name: {}", txn_p.in().msg_name).c_str());
-            rc = dp::msg::validate<msg::data_t>(promise.in(), msg::name);
-            if (error()) continue;
+            if (error(msg::validate(promise.in()))) continue;
+            //rc = validate_row(promise, row_index, state,
+            //  {.selected{ true } .price{ true } });
+            // if (error()) continue;
           }
-          if (auto& row = get_row(promise, row_index); !row.listed) {
-            // co_await click_listed(promise, row_index);
-            // rc = validate_row(promise, state, row_index, { .price{true}, .listed{true} );
+          if (auto& row = get_row(promise, row_index);
+            !row.listed)
+          {
+            co_yield click_listitem();
+            if (error(msg::validate(promise.in()))) continue;
+            // rc = validate_row(promise, row_index, state,
+            //   {.selected{ true } .price{ true }, .listed{ true } );
             // if (error()) continue;
           }
         }
