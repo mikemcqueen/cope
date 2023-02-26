@@ -33,6 +33,13 @@ namespace dp {
       data_t& operator=(const data_t&) = delete;
       virtual ~data_t() {}
 
+      template<typename T> const T& as() const {
+        return *dynamic_cast<const T*>(this);
+      }
+      template<typename T> T& as() {
+        return *dynamic_cast<T*>(this);
+      }
+
       std::string msg_name;
     };
 
@@ -143,11 +150,17 @@ namespace dp::txn {
       //auto& txn_handler() const { return *txn_handler_;  }
       //void set_txn_handler(handler_t* handler) { txn_handler_ = handler; }
 
-      auto& in() const { return *in_.get(); }
+      const msg_t& in() const { return *in_.get(); }
+      msg_t& in() { return *in_.get(); }
+      /*
+      // would be nice for this overload to work. doesn't default to const? why?
+      // read up on overload selection
+      dp::msg_ptr_t&& in() { return std::move(in_); }
       template<typename T> const T& in_as() const {
         return *dynamic_cast<const T*>(in_.get());
       }
-      dp::msg_ptr_t&& in_ptr() { return std::move(in_); }
+      */
+      dp::msg_ptr_t in_ptr() { return std::move(in_); }
       void emplace_in(dp::msg_ptr_t value) { in_ = std::move(value); }
 
       auto& out() const { return *out_.get(); }

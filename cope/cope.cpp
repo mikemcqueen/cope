@@ -2,10 +2,26 @@
 #include <chrono>
 #include <iostream>
 #include <format>
+#include <string>
 #include "cope.h"
 #include "dp.h"
+#include "log.h"
 #include "txsetprice.h"
 #include "txsellitem.h"
+#include "ui_msg.h" // dispatch, or "register_dispatch"
+
+namespace dp {
+  result_code dispatch(const msg_t& msg) {
+    result_code rc{ result_code::success };
+    if (!msg.msg_name.starts_with("ui::msg")) {
+      log(std::format("dispatch(): unsupported message name, {}", msg.msg_name));
+      rc = result_code::unexpected_error;
+    } else {
+      rc = ui::msg::dispatch(msg);
+    }
+    return rc;
+  }
+}
 
 dp::msg_ptr_t start_txn_sellitem(dp::txn::handler_t& tx_sell,
   const sellitem::msg::data_t::row_vector& rows)
@@ -27,9 +43,10 @@ int main()
   using namespace std::chrono;
 
   sellitem::msg::data_t::row_vector rows_page_1{
-    { "magic balls", 7, false, false },
+//    { "magic balls", 7, false, false },
 
     { "magic beans", 1, false, false },
+#if 1
     { "magic beans", 1, true, false },
     { "magic beans", 1, false, true },
     { "magic beans", 1, true, true },
@@ -47,6 +64,7 @@ int main()
     { "magic beans", 5, true, false },
 
     { "magic balls", 9, false, false }
+#endif
   };
 
   dp::txn::handler_t tx_sell{ sellitem::txn::handler() };
@@ -66,7 +84,9 @@ int main()
 
     if (!row.selected) {
       assert(out && out->msg_name == std::format("click_row({})", row_index));
-      log(std::format("CLICK_ROW({})", row_index));
+      //log(std::format("CLICK_ROW({})", row_index));
+      dp::dispatch(*out.get());
+
       row.selected = true;
       rows_copy = rows_page_1;
       auto in = std::make_unique<sellitem::msg::data_t>(std::move(rows_copy));
@@ -75,16 +95,23 @@ int main()
 
     if (row.price != 2) {
       assert(out && out->msg_name == "click_setprice");
-      log("CLICK_SETPRICE");
+      //log("CLICK_SETPRICE");
+      dp::dispatch(*out.get());
+
       auto m1 = std::make_unique<setprice::msg::data_t>(row.price);
       out = tx_sell.send_value(std::move(m1));
+      assert(out && out->msg_name == "ui::msg::send_chars"); // input_price
+      //log("SET_WIDGET_TEXT(PriceText, 2)");
+      dp::dispatch(*out.get());
 
-      assert(out && out->msg_name == "input_price(2)");
       row.price = 2;
       auto m2 = std::make_unique<setprice::msg::data_t>(row.price);
       out = tx_sell.send_value(std::move(m2));
 
-      assert(out && out->msg_name == "click_ok");
+      assert(out && out->msg_name == "ui::msg::click_widget"); // click_ok
+      //log("CLICK_WIDGET(OK)");
+      dp::dispatch(*out.get());
+
       rows_copy = rows_page_1;
       auto m3 = std::make_unique<sellitem::msg::data_t>(std::move(rows_copy));
       out = tx_sell.send_value(std::move(m3));
@@ -92,7 +119,9 @@ int main()
 
     if (!row.listed) {
       assert(out && out->msg_name == "click_listitem");
-      log("CLICK_LISTITEM");
+      //log("CLICK_LISTITEM");
+      dp::dispatch(*out.get());
+
       row.listed = true;
       rows_copy = rows_page_1;
       auto in = std::make_unique<sellitem::msg::data_t>(std::move(rows_copy));

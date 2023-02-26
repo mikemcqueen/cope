@@ -12,10 +12,11 @@ namespace sellitem
   auto get_row(const promise_type& promise, int row_index, const msg::row_data_t** row) {
     const msg::data_t* msg{ nullptr };
     if (dp::is_start_txn(promise.in())) {
-      const auto& txn = promise.in_as<txn::start_t>();
-      msg = dynamic_cast<const msg::data_t*>(&txn::start_t::msg_from(txn));
+      const auto& txn = promise.in().as<txn::start_t>();
+      msg = &txn::start_t::msg_from(txn).as<msg::data_t>();
+      //msg = dynamic_cast<const msg::data_t*>(&txn::start_t::msg_from(txn));
     } else {
-      msg = &promise.in_as<msg::data_t>();
+      msg = &promise.in().as<msg::data_t>();
     }
     if (row_index < 0 || row_index >= msg->rows.size()) {
       return dp::result_code::expected_error; // TODO test this
@@ -51,7 +52,7 @@ namespace sellitem
   auto get_candidate_row(const promise_type& promise, const txn::state_t& state)
     -> std::optional<int>
   {
-    return get_candidate_row(promise.in_as<msg::data_t>(), state);
+    return get_candidate_row(promise.in().as<msg::data_t>(), state);
   }
 
   struct validate_row_options {
@@ -90,9 +91,7 @@ namespace sellitem
     auto setprice_state = std::make_unique<setprice::txn::state_t>(
       std::string(sellitem::msg::name), sellitem_state.item_price);
     return dp::txn::start_txn_awaitable<setprice::txn::state_t>{
-      handle,
-      std::move(promise.in_ptr()),
-      std::move(setprice_state)
+      handle, std::move(promise.in_ptr()), std::move(setprice_state)
     };
   }
 
@@ -125,7 +124,7 @@ namespace sellitem
       for (auto& promise = co_await handler_t::awaitable{ txn::name }; true;
         co_await dp::txn::complete(promise, rc))
       {
-        auto& txn = promise.in();
+        dp::msg_t& txn = promise.in();
         if (error(txn::validate_start(txn))) continue;
         state = std::move(start_t::state_from(txn));
         auto& msg = dynamic_cast<const msg::data_t&>(start_t::msg_from(txn));

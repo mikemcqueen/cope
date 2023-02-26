@@ -1,0 +1,11 @@
+* txn_complete, use it to encapsulate a msg_ like txn_start?
+
+* can pass state to validate_start, and initialize it there, eliminating one line
+* i think get_candidate_row could, what, take **row? i stared at this a bunch. maybe. 
+* static member function template? (msg_from<>)
+* why am i moving yield result to root_p? why not active_p? it might change on txn_complete?
+* consider dp::hresult , with empty named enum, make_hresult(), s_ok, s_false, e_fail
+  and succeeded(), faild()
+  --OR--
+  for now, in dp.h just include platform.h, and using hresult = HRESULT
+  and maybe constexpr s_ok, s_false, e_fail 

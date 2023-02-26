@@ -1,6 +1,8 @@
 // txsetprice.cpp
 
 #include "txsetprice.h"
+#include "ui_msg.h"
+#include "Eq2UiIds.h"
 
 namespace setprice {
   using dp::result_code;
@@ -8,10 +10,10 @@ namespace setprice {
   using dp::msg_t;
   using promise_type = handler_t::promise_type;
 
-  auto validate_price(const msg::data_t& msg, int price) {
-    result_code rc = dp::msg::validate<msg::data_t>(msg, msg::name);
+  auto validate_price(const msg_t& msg, int price) {
+    result_code rc = msg::validate(msg);
     if (rc == result_code::success) {
-      const msg::data_t& spmsg = dynamic_cast<const msg::data_t&>(msg);
+      const msg::data_t& spmsg = msg.as<msg::data_t>();
       if (spmsg.price != price) {
         log(std::format("setprice::validate_price, price mismatch: "
           "expected({}), actual({})", price, spmsg.price));
@@ -25,7 +27,7 @@ namespace setprice {
   }
 
   auto validate_price(const promise_type& promise, int price) {
-    return validate_price(promise.in_as<msg::data_t>(), price);
+    return validate_price(promise.in(), price);
   }
 
   auto validate_complete(const promise_type& promise, std::string_view msg_name) {
@@ -33,11 +35,15 @@ namespace setprice {
   }
 
   auto input_price(int price) {
-    return std::make_unique<msg_t>(std::format("input_price({})", price));
+    using namespace eq2::broker::set_price_popup;
+    return std::make_unique<ui::msg::send_chars::data_t>(window::id,
+      widget::id::PriceText, std::to_string(price));
   }
 
   auto click_ok() {
-    return std::make_unique<msg_t>("click_ok");
+    using namespace eq2::broker::set_price_popup;
+    return std::make_unique<ui::msg::click::data_t>(window::id,
+      widget::id::OkButton);
   }
 
   namespace txn {
@@ -58,7 +64,10 @@ namespace setprice {
         if (error(validate_start(txn))) continue;
         state = std::move(start_t::state_from(txn));
 
-        const msg::data_t& msg = dynamic_cast<const msg::data_t&>(start_t::msg_from(txn));
+        // TODO: msg = start_t::msg_fom(txn).as<const msg::data_t&>();
+        // .as<>() could be in base dp::msg::data_t
+        const msg::data_t& msg = start_t::msg_from(txn).as<msg::data_t>();
+        // dynamic_cast<const msg::data_t&>(start_t::msg_from(txn));
         // TODO: I don't like this. validation errors should always continue?
         // can't we access the price? have it returned via &price param?
         if (error(validate_price(msg, state.price))) {
