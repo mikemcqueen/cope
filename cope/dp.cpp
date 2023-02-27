@@ -35,8 +35,7 @@ namespace dp {
         log(std::format("{}::complete() error: {}", promise.txn_name(), (int)rc));
         return complete(promise, std::move(
           std::make_unique<dp::txn::complete_t>(promise.txn_name(), rc)));
-      }
-      else {
+      } else {
         return complete(promise);
       }
     }

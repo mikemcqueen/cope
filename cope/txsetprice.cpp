@@ -34,13 +34,13 @@ namespace setprice {
     return dp::msg::validate_name(promise.in(), msg_name);
   }
 
-  auto input_price(int price) {
+  auto enter_price_text(int price) {
     using namespace eq2::broker::set_price_popup;
     return std::make_unique<ui::msg::send_chars::data_t>(window::id,
       widget::id::PriceText, std::to_string(price));
   }
 
-  auto click_ok() {
+  auto click_ok_button() {
     using namespace eq2::broker::set_price_popup;
     return std::make_unique<ui::msg::click::data_t>(window::id,
       widget::id::OkButton);
@@ -62,21 +62,18 @@ namespace setprice {
       {
         auto& txn = promise.in();
         if (error(validate_start(txn))) continue;
-        state = std::move(start_t::state_from(txn));
-
-        // TODO: msg = start_t::msg_fom(txn).as<const msg::data_t&>();
-        // .as<>() could be in base dp::msg::data_t
-        const msg::data_t& msg = start_t::msg_from(txn).as<msg::data_t>();
-        // dynamic_cast<const msg::data_t&>(start_t::msg_from(txn));
+        state = start_t::state_from(txn);
+        const auto& msg = start_t::msg_from(txn).as<msg::data_t>();
         // TODO: I don't like this. validation errors should always continue?
         // can't we access the price? have it returned via &price param?
+        // result_t, succeeded, s_false
         if (error(validate_price(msg, state.price))) {
           if (rc == result_code::unexpected_error) continue;
-          co_yield input_price(state.price);
+          co_yield enter_price_text(state.price);
           if (error(validate_price(promise, state.price))) continue;
         }
 
-        co_yield click_ok();
+        co_yield click_ok_button();
         error(validate_complete(promise, state.prev_msg_name));
       }
     }

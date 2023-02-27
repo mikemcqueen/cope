@@ -5,7 +5,8 @@
 * static member function template? (msg_from<>)
 * why am i moving yield result to root_p? why not active_p? it might change on txn_complete?
 * consider dp::hresult , with empty named enum, make_hresult(), s_ok, s_false, e_fail
-  and succeeded(), faild()
-  --OR--
+  and succeeded(), failed(), and formatter support
+  --OR-- ((bad))
   for now, in dp.h just include platform.h, and using hresult = HRESULT
   and maybe constexpr s_ok, s_false, e_fail 
+* sell_item multi-page handler

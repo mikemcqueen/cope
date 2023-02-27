@@ -1,9 +1,13 @@
 #include <optional>
 #include "txsellitem.h"
 #include "txsetprice.h"
+#include "ui_msg.h"
+#include "Eq2UiIds.h"
 
 namespace sellitem
 {
+  using namespace std::literals;
+
   using dp::msg_t;
   using dp::result_code;
   using dp::txn::handler_t;
@@ -95,27 +99,36 @@ namespace sellitem
     };
   }
 
-  auto click_row(int row_index) {
-    return std::make_unique<msg_t>(std::format("click_row({})", row_index));
+  auto click_table_row(int row_index) {
+    // maybe this should be a separate ui::msg, so we don't need to muck
+    // with window stuff here. we could dynamic_cast current window to 
+    // TableWindow, and call GetRowRect (or ClickRow directly). click_table_row maybe
+    row_index;
+    return std::make_unique<msg_t>(ui::msg::name::click_table_row);
   }
 
-  auto click_setprice() {
-    return std::make_unique<msg_t>("click_setprice");
+  auto click_setprice_button() {
+    using namespace eq2::broker::sell_tab;
+    return std::make_unique<ui::msg::click::data_t>(window::id,
+      widget::id::SetPriceButton);
   }
 
-  auto click_listitem() {
-    return std::make_unique<msg_t>("click_listitem");
+  auto click_listitem_button() {
+    using namespace eq2::broker::sell_tab;
+    return std::make_unique<ui::msg::click::data_t>(window::id,
+      widget::id::ListItemButton);
   }
 
   namespace txn {
     auto handler() -> handler_t {
+
       using dp::result_code;
 
       result_code rc{ result_code::success };
       const auto& error = [&rc](result_code new_rc) noexcept {
         rc = new_rc;
         const auto error = (rc != result_code::success);
-        if (error) log(std::format("  txn::sellitem error({})", (int)rc));
+        if (error) log(std::format("  txn::sellitem::onepage_handler error({})", (int)rc));
         return error;
       };
       dp::txn::handler_t setprice_handler{ setprice::txn::handler() };
@@ -126,8 +139,8 @@ namespace sellitem
       {
         dp::msg_t& txn = promise.in();
         if (error(txn::validate_start(txn))) continue;
-        state = std::move(start_t::state_from(txn));
-        auto& msg = dynamic_cast<const msg::data_t&>(start_t::msg_from(txn));
+        state = start_t::state_from(txn);
+        const auto& msg = start_t::msg_from(txn).as<msg::data_t>();
 
         for(auto opt_row = get_candidate_row(msg, state);
           (rc != result_code::unexpected_error) && opt_row.has_value();
@@ -138,13 +151,13 @@ namespace sellitem
           if (error(get_row(promise, row_index, &row))) continue;
 
           if (!row->selected) {
-            co_yield click_row(row_index);
+            co_yield click_table_row(row_index);
             if (error(validate_row(promise, row_index, state, &row,
               { .selected{true} }))) continue;
           }
 
           if (row->price != state.item_price) {
-            co_yield click_setprice();
+            co_yield click_setprice_button();
             if (error(setprice::msg::validate(promise.in()))) continue;
 
             co_await start_txn_setprice(setprice_handler.handle(), promise, state);
@@ -153,7 +166,7 @@ namespace sellitem
           }
 
           if (!row->listed) {
-            co_yield click_listitem();
+            co_yield click_listitem_button();
             if (error(validate_row(promise, row_index, state, &row,
               { .selected{true}, .price{true}, .listed{true} }))) continue;
           }

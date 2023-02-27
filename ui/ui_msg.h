@@ -18,6 +18,7 @@ namespace ui::msg {
 
     constexpr auto click_widget{ "ui::msg::click_widget"sv };
     constexpr auto click_point{ "ui::msg::click_point"sv };
+    constexpr auto click_table_row{ "ui::msg::click_table_row"sv };
     constexpr auto send_chars{ "ui::msg::send_chars"sv };
     constexpr auto set_widget_text{ "ui::msg::set_widget_text"sv };
   }

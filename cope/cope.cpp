@@ -9,6 +9,9 @@
 #include "txsetprice.h"
 #include "txsellitem.h"
 #include "ui_msg.h" // dispatch, or "register_dispatch"
+#include "Eq2UiIds.h"
+
+using namespace std::literals;
 
 namespace dp {
   result_code dispatch(const msg_t& msg) {
@@ -23,30 +26,31 @@ namespace dp {
   }
 }
 
-dp::msg_ptr_t start_txn_sellitem(dp::txn::handler_t& tx_sell,
-  const sellitem::msg::data_t::row_vector& rows)
-{
+dp::msg_ptr_t start_txn_sellitem(dp::msg_ptr_t msg_ptr) {
   using namespace sellitem;
-
-  msg::data_t::row_vector rows_copy{ rows };
-  auto msg = std::make_unique<msg::data_t>(std::move(rows_copy));
+  log("starting txn::sell_item");
   // TODO: would like to allow this and build a unique_ptr from it
   // sellitem::txn::state_t state{ "some item", 1 };
-  auto state = std::make_unique<txn::state_t>("magic beans", 2);
-  auto txn = dp::txn::make_start_txn<txn::state_t>(txn::name,
-    std::move(msg), std::move(state));
-  return std::move(tx_sell.send_value(std::move(txn)));
+  auto state = std::make_unique<txn::state_t>("magic beans"s, 2);
+  return std::move(dp::txn::make_start_txn<txn::state_t>(txn::name,
+    std::move(msg_ptr), std::move(state)));
 }
 
-int main()
+auto screenshot() {
+  return std::make_unique<dp::msg_t>("dp::msg::screenshot");
+}
+
+dp::msg_ptr_t translate(dp::msg_ptr_t msg_ptr, std::string& out_msg,
+  std::string& out_extra)
 {
-  using namespace std::chrono;
+  msg_ptr;
+  using namespace sellitem::msg;
 
-  sellitem::msg::data_t::row_vector rows_page_1{
-//    { "magic balls", 7, false, false },
-
+  static data_t::row_vector rows_page_1{
+    //{ "magic balls", 7, false, false },
     { "magic beans", 1, false, false },
 #if 1
+    { "magic beans", 1, false, false },
     { "magic beans", 1, true, false },
     { "magic beans", 1, false, true },
     { "magic beans", 1, true, true },
@@ -59,73 +63,125 @@ int main()
     { "magic beans", 2, true, true },
 
     { "magic balls", 8, false, false },
-
     { "magic beans", 3, false, true },
     { "magic beans", 5, true, false },
-
     { "magic balls", 9, false, false }
 #endif
   };
+  static bool first = true;
+  static bool in_setprice = false;
+  static bool setprice_clicked = false;
+  static bool listed_clicked = false;
+  static bool final_message_sent = false;
+  static int index = 0;
+  bool xtralog = true;
+  
+
+  out_msg.clear();
+  out_extra.clear();
+  //row_data_t prev_row = rows_page_1[index];
+  for (; index < rows_page_1.size(); ++index,
+    first = true,
+    setprice_clicked = false,
+    in_setprice = false,
+    listed_clicked = false)
+  {
+    auto& row = rows_page_1[index];
+
+    if (row.item_name != "magic beans") continue;
+    if (row.price == 2 && row.listed) continue;
+
+    if (first) log(std::format("---ROW {}--- selected: {}, listed: {}", index, row.selected, row.listed));
+
+    if (!row.selected) {
+      if (first) {
+        out_msg.assign(ui::msg::name::click_table_row);
+        if (xtralog) log("****1 ");
+        break;
+      }
+      row.selected = true;
+    }
+    if (row.price != 2 && !setprice_clicked) {
+      out_msg.assign(ui::msg::name::click_widget); // click set_price_button
+      out_extra.assign(std::to_string(eq2::broker::sell_tab::widget::id::SetPriceButton));
+      setprice_clicked = true;
+      if (xtralog) log("****2 ");
+      break;
+    }
+    if (row.price != 2) {
+      if (!in_setprice) {
+        in_setprice = true;
+        out_msg.assign(ui::msg::name::send_chars); // enter price_text
+        if (xtralog) log(std::format("****3  price({})", row.price));
+        break;
+      }
+      out_msg.assign(ui::msg::name::click_widget); // click ok_button
+      out_extra.assign(std::to_string(eq2::broker::set_price_popup::widget::id::OkButton));
+      if (xtralog) log(std::format("****4  price({}) row({})", row.price, index));
+      row.price = 2;
+      break;
+    }
+    in_setprice = false;
+    if (!row.listed) {
+      if (!listed_clicked) {
+        listed_clicked = true;
+        out_msg.assign(out_msg.assign(ui::msg::name::click_widget)); // click list_item_button
+        out_extra.assign(std::to_string(eq2::broker::sell_tab::widget::id::ListItemButton));
+        if (xtralog) log("****5 ");
+        break;
+      }
+      row.listed = true;
+      //if (xtralog) log("****6 ");
+      //out_msg.assign("skip");
+      //break;
+    }
+  }
+  first = false;
+
+  if (index == rows_page_1.size()) {
+    if (final_message_sent) {
+      final_message_sent = false;
+      return std::move(std::make_unique<dp::msg_t>("done"));
+    } else {
+      final_message_sent = true;
+    }
+  } else if (in_setprice) {
+    return std::move(std::make_unique<setprice::msg::data_t>(rows_page_1[index].price));
+  }
+  data_t::row_vector rows_copy = rows_page_1; //unnecessary. pass & copy directly below/ (no move)
+  return std::move(std::make_unique<data_t>(std::move(rows_copy)));
+}
+
+int main()
+{
+  using namespace std::chrono;
 
   dp::txn::handler_t tx_sell{ sellitem::txn::handler() };
-  dp::msg_ptr_t out = start_txn_sellitem(tx_sell, rows_page_1);
+  bool tx_active = false;
+  dp::msg_ptr_t out{};
 
   int max = 1; 0'000;
   if (max > 1) logging_enabled = false;
   auto start = high_resolution_clock::now();
-  for (auto row_index = 0; row_index < rows_page_1.size(); ++row_index) {
-    log(std::format("---ROW {}---", row_index));
+  for (int i{ 1 }; i; i++) {
+    std::string expected_out_msg_name;
+    std::string extra;
 
-    auto& row = rows_page_1[row_index];
-    if (row.item_name != "magic beans") continue;
-    if (row.price == 2 && row.listed) continue;
-
-    sellitem::msg::data_t::row_vector rows_copy = rows_page_1;
-
-    if (!row.selected) {
-      assert(out && out->msg_name == std::format("click_row({})", row_index));
-      //log(std::format("CLICK_ROW({})", row_index));
-      dp::dispatch(*out.get());
-
-      row.selected = true;
-      rows_copy = rows_page_1;
-      auto in = std::make_unique<sellitem::msg::data_t>(std::move(rows_copy));
-      out = tx_sell.send_value(std::move(in));
+    dp::msg_ptr_t out_ptr = std::move(translate(screenshot(), expected_out_msg_name, extra));
+    if (out_ptr->msg_name == "done") break;
+    if (!tx_active) {
+      out_ptr = std::move(start_txn_sellitem(std::move(out_ptr)));
+      tx_active = true;
     }
-
-    if (row.price != 2) {
-      assert(out && out->msg_name == "click_setprice");
-      //log("CLICK_SETPRICE");
-      dp::dispatch(*out.get());
-
-      auto m1 = std::make_unique<setprice::msg::data_t>(row.price);
-      out = tx_sell.send_value(std::move(m1));
-      assert(out && out->msg_name == "ui::msg::send_chars"); // input_price
-      //log("SET_WIDGET_TEXT(PriceText, 2)");
-      dp::dispatch(*out.get());
-
-      row.price = 2;
-      auto m2 = std::make_unique<setprice::msg::data_t>(row.price);
-      out = tx_sell.send_value(std::move(m2));
-
-      assert(out && out->msg_name == "ui::msg::click_widget"); // click_ok
-      //log("CLICK_WIDGET(OK)");
-      dp::dispatch(*out.get());
-
-      rows_copy = rows_page_1;
-      auto m3 = std::make_unique<sellitem::msg::data_t>(std::move(rows_copy));
-      out = tx_sell.send_value(std::move(m3));
+    out = tx_sell.send_value(std::move(out_ptr));
+    if (!expected_out_msg_name.empty()) {
+      log(std::format("expected out msg_name: {} {}", expected_out_msg_name, extra));
     }
-
-    if (!row.listed) {
-      assert(out && out->msg_name == "click_listitem");
-      //log("CLICK_LISTITEM");
+    if (out) {
+      assert(out->msg_name == expected_out_msg_name);
       dp::dispatch(*out.get());
-
-      row.listed = true;
-      rows_copy = rows_page_1;
-      auto in = std::make_unique<sellitem::msg::data_t>(std::move(rows_copy));
-      out = tx_sell.send_value(std::move(in));
+    } else {
+      assert(expected_out_msg_name.empty());
     }
   }
   auto end = std::chrono::high_resolution_clock::now();
@@ -136,3 +192,4 @@ int main()
 
   return 0;
 }
+

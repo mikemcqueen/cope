@@ -26,12 +26,11 @@ namespace sellitem {
         return std::nullopt;
       }
 
-      data_t(row_vector&& rv) : dp::msg::data_t(name), rows(std::move(rv)),
-        selected_row(find_selected_row(rows))
+      data_t(row_vector&& rv) : dp::msg::data_t(name), rows(std::move(rv))
+        //selected_row(find_selected_row(rows))
       {}
 
       std::vector<row_data_t> rows;
-      std::optional<int> selected_row;
     };
 
     inline auto validate(const dp::msg_t& msg) {
@@ -43,9 +42,6 @@ namespace sellitem {
     inline constexpr std::string_view name{ "txn::sell_item" };
 
     struct state_t {
-      // state_t(const state_t& state) = delete;
-      // state_t& operator=(const state_t& state) = delete;
-
       std::string item_name;
       int item_price;
     };

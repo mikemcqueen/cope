@@ -16,6 +16,21 @@ namespace dp {
     unexpected_error
   };
 
+  /*
+  template <>
+  struct std::formatter<Point> : std::formatter<std::string> {
+    auto format(Point p, format_context& ctx) {
+      return formatter<string>::format(
+        std::format("[{}, {}]", p.x, p.y), ctx);
+    }
+  };
+  */
+
+  struct move_only {
+    move_only& operator=(const move_only& m) = delete;
+    move_only& operator=(move_only&& m) = default;
+  };
+
   namespace msg { struct data_t; }
 
   using msg_t = msg::data_t;
@@ -78,9 +93,9 @@ namespace dp::txn {
  
     // getting state from a message usually precedes a move, therefore no const.
     // maybe this should just be move_state(txn, stateT*)
-    static stateT& state_from(msg_t& txn) {
+    static stateT&& state_from(msg_t& txn) {
       start_t<stateT>& txn_start = dynamic_cast<start_t<stateT>&>(txn);
-      return *txn_start.state.get();
+      return std::move(*txn_start.state.get());
     }
 
     constexpr start_t(std::string_view txn_name, msg_ptr_t m, state_ptr_t s) :
@@ -300,13 +315,16 @@ namespace dp::txn {
         return dst_handle_.value(); // symmetric transfer to dst
       } else {
         log("  return noop_coroutine()");
+        if (msg_) {
+          log(std::format("  dropping {} on the floor", msg_->msg_name));
+        }
         return std::noop_coroutine();
       }
     }
   };
 
-  complete_txn_awaitable complete(promise_type& promise, msg_ptr_t msg_ptr);
-  complete_txn_awaitable complete(promise_type& promise);
+  // complete_txn_awaitable complete(promise_type& promise, msg_ptr_t msg_ptr);
+  // complete_txn_awaitable complete(promise_type& promise);
   complete_txn_awaitable complete(promise_type& promise, result_code rc);
 
   // TODO: this should validate txn_name, for completeness (and slowness)

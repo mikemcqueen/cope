@@ -1,4 +1,4 @@
-add_library(ui UiInput.cpp "ui_msg.cpp")
+add_library(ui UiInput.cpp ui_msg.cpp)
 
 target_include_directories(ui PRIVATE
   "${PROJECT_SOURCE_DIR}/cope"  # TODO fix, for log.h, dp.h
