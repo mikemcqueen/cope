@@ -12,6 +12,6 @@ if (CMAKE_VERSION VERSION_GREATER 3.12)
 endif()
 
 target_compile_options(cope PUBLIC
-  $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX>
+  $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
   $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic -Werror>
 )

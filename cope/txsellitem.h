@@ -26,9 +26,7 @@ namespace sellitem {
         return std::nullopt;
       }
 
-      data_t(row_vector&& rv) : dp::msg::data_t(name), rows(std::move(rv))
-        //selected_row(find_selected_row(rows))
-      {}
+      data_t(row_vector rv) : dp::msg::data_t(name), rows(std::move(rv)) {}
 
       std::vector<row_data_t> rows;
     };

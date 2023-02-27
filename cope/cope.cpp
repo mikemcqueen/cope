@@ -163,7 +163,8 @@ int main()
   int max = 1; 0'000;
   if (max > 1) logging_enabled = false;
   auto start = high_resolution_clock::now();
-  for (int i{ 1 }; i; i++) {
+  int i{};
+  for (; i >= 0; i++) {
     std::string expected_out_msg_name;
     std::string extra;
 
@@ -188,7 +189,7 @@ int main()
   double elapsed = 1e-6 * duration_cast<nanoseconds>(end - start).count();
 
   std::cerr << "Elapsed: " << std::fixed << elapsed << std::setprecision(9)
-    << "ms" << std::endl;
+    << "ms (" << i << " frames)" << std::endl;
 
   return 0;
 }
