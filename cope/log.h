@@ -1,14 +1,16 @@
+// Log.h
+
+#if _MSC_VER > 1000
 #pragma once
+#endif
 
-#include <string>
+#ifndef Include_LOG_H
+#define Include_LOG_H
 
-inline static bool logging_enabled = true;
+void LogAlways (const wchar_t* pszFormat, ...);
+void LogError(const wchar_t* pszFormat, ...);
+void LogWarning(const wchar_t* pszFormat, ...);
+void LogInfo(const wchar_t* pszFormat, ...);
 
-void log(const char* msg);
-inline void log(const std::string& msg) { return log(msg.c_str()); }
-
-// hacks
-inline void LogInfo(const std::string& msg) { return log(msg); }
-inline void LogAlways(const std::string& msg) { return log(msg); }
-inline void LogError(const std::string& msg) { return log(msg); }
+#endif // Include_LOG_H
 

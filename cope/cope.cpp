@@ -17,7 +17,7 @@ namespace dp {
   result_code dispatch(const msg_t& msg) {
     result_code rc{ result_code::success };
     if (!msg.msg_name.starts_with("ui::msg")) {
-      log(std::format("dispatch(): unsupported message name, {}", msg.msg_name));
+      LogInfo(L"dispatch(): unsupported message name, %S", msg.msg_name.c_str());
       rc = result_code::unexpected_error;
     } else {
       rc = ui::msg::dispatch(msg);
@@ -28,7 +28,7 @@ namespace dp {
 
 dp::msg_ptr_t start_txn_sellitem(dp::msg_ptr_t msg_ptr) {
   using namespace sellitem;
-  log("starting txn::sell_item");
+  LogInfo(L"starting txn::sell_item");
   // TODO: would like to allow this and build a unique_ptr from it
   // sellitem::txn::state_t state{ "some item", 1 };
   auto state = std::make_unique<txn::state_t>("magic beans"s, 2);
@@ -89,48 +89,48 @@ dp::msg_ptr_t translate(dp::msg_ptr_t msg_ptr, std::string& out_msg,
     auto& row = rows_page_1[index];
 
     if (row.item_name != "magic beans") continue;
-    if (row.price == 2 && row.listed) continue;
+    if (row.item_price.GetPlat() == 2 && row.item_listed) continue;
 
-    if (first) log(std::format("---ROW {}--- selected: {}, listed: {}", index, row.selected, row.listed));
+    if (first) LogError(L"---ROW %d--- selected: %d, listed: %d", index, row.selected, row.item_listed);
 
     if (!row.selected) {
       if (first) {
         out_msg.assign(ui::msg::name::click_table_row);
-        if (xtralog) log("****1 ");
+        if (xtralog) LogInfo(L"****1 ");
         break;
       }
       row.selected = true;
     }
-    if (row.price != 2 && !setprice_clicked) {
+    if (row.item_price.GetPlat() != 2 && !setprice_clicked) {
       out_msg.assign(ui::msg::name::click_widget); // click set_price_button
       out_extra.assign(std::to_string(eq2::broker::sell_tab::widget::id::SetPriceButton));
       setprice_clicked = true;
-      if (xtralog) log("****2 ");
+      if (xtralog) LogInfo(L"****2 ");
       break;
     }
-    if (row.price != 2) {
+    if (row.item_price.GetPlat() != 2) {
       if (!in_setprice) {
         in_setprice = true;
         out_msg.assign(ui::msg::name::send_chars); // enter price_text
-        if (xtralog) log(std::format("****3  price({})", row.price));
+        if (xtralog) LogInfo(L"****3  price(%d)", row.item_price);
         break;
       }
       out_msg.assign(ui::msg::name::click_widget); // click ok_button
       out_extra.assign(std::to_string(eq2::broker::set_price_popup::widget::id::OkButton));
-      if (xtralog) log(std::format("****4  price({}) row({})", row.price, index));
-      row.price = 2;
+      if (xtralog) LogInfo(L"****4  price(%d) row(%d)", row.item_price.GetPlat(), index);
+      row.item_price = 2;
       break;
     }
     in_setprice = false;
-    if (!row.listed) {
+    if (!row.item_listed) {
       if (!listed_clicked) {
         listed_clicked = true;
-        out_msg.assign(out_msg.assign(ui::msg::name::click_widget)); // click list_item_button
+        out_msg.assign(ui::msg::name::click_widget); // click list_item_button
         out_extra.assign(std::to_string(eq2::broker::sell_tab::widget::id::ListItemButton));
-        if (xtralog) log("****5 ");
+        if (xtralog) LogInfo(L"****5 ");
         break;
       }
-      row.listed = true;
+      row.item_listed = true;
       //if (xtralog) log("****6 ");
       //out_msg.assign("skip");
       //break;
@@ -146,7 +146,7 @@ dp::msg_ptr_t translate(dp::msg_ptr_t msg_ptr, std::string& out_msg,
       final_message_sent = true;
     }
   } else if (in_setprice) {
-    return std::move(std::make_unique<setprice::msg::data_t>(rows_page_1[index].price));
+    return std::move(std::make_unique<setprice::msg::data_t>(rows_page_1[index].item_price.GetPlat()));
   }
   data_t::row_vector rows_copy = rows_page_1; //unnecessary. pass & copy directly below/ (no move)
   return std::move(std::make_unique<data_t>(std::move(rows_copy)));
@@ -160,8 +160,8 @@ int main()
   bool tx_active = false;
   dp::msg_ptr_t out{};
 
-  int max = 1; 0'000;
-  if (max > 1) logging_enabled = false;
+//  int max = 1; 0'000;
+//  if (max > 1) logging_enabled = false;
   auto start = high_resolution_clock::now();
   int i{};
   for (; i >= 0; i++) {
@@ -176,9 +176,9 @@ int main()
     }
     out = tx_sell.send_value(std::move(out_ptr));
     if (!expected_out_msg_name.empty()) {
-      log(std::format("expected out msg_name: {} {}", expected_out_msg_name, extra));
+      LogInfo(L"expected out msg_name: %S %S", expected_out_msg_name.c_str(), extra.c_str());
     }
-    if (out) {
+    if (out && expected_out_msg_name.starts_with("ui::")) {
       assert(out->msg_name == expected_out_msg_name);
       dp::dispatch(*out.get());
     } else {

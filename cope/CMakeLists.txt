@@ -1,5 +1,4 @@
-﻿add_executable (cope "cope.cpp" "cope.h" "txsellitem.h" "txsetprice.h" "dp.h" "txsetprice.cpp"
-                     "log.h" "log.cpp" "txsellitem.cpp" "dp.cpp" "Eq2UiIds.h")
+﻿add_executable (cope "cope.cpp" "txsetprice.cpp" "log.cpp" "txsellitem.cpp" "dp.cpp" "Price_t.cpp")
 
 target_link_libraries(cope PUBLIC ui)
 

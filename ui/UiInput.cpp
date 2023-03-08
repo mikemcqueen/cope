@@ -78,8 +78,8 @@ SendChars(
     {
         if (!SendChar(pText[index]))
         {
-            LogError(std::format("Input_t::SendChars(): Could not send string ({}) char ({})",
-                     pText, pText[index]));
+            LogError(L"Input_t::SendChars(): Could not send string (%S) char (%d)",
+                     pText, pText[index]);
             return false;
         }
     }
@@ -170,7 +170,7 @@ GetVkCode(
     }
     if (vkInvalid == LOBYTE(vkScan))
     {
-        LogError(std::format("Unknown vk code for ({})", ch));
+        LogError(L"Unknown vk code for (%d)", ch);
         throw std::logic_error("Unknown vk code");
     }
     return vkScan;
@@ -225,8 +225,8 @@ Send(
     UINT EventCount = SendInput(1, &input, sizeof(INPUT));
     if (EventCount != 1)
     {
-        LogError(std::format("Input_t::Send() Size({}) Sent({}) GLE({})",
-                 1, EventCount, GetLastError()));
+        LogError(L"Input_t::Send() Size(%d) Sent(%d) GLE(%d)",
+                 1, EventCount, GetLastError());
         return false;
     }
     return true;
