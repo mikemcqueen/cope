@@ -8,9 +8,12 @@
 #define Include_UI_MSG_H
 
 #include <string_view>
-#include "UiTypes.h"
+//#include "UiTypes.h"
 #include "cope_msg.h"
 //#include "UiWindowId.h"
+
+using widget_id_t = int;
+struct POINT { int x; int y; };
 
 namespace ui::msg {
   namespace name {
@@ -24,13 +27,14 @@ namespace ui::msg {
   }
 
   struct data_t : dp::msg_t {
-    data_t(std::string_view msg_name, std::string_view wnd_name) :
-      dp::msg_t(msg_name), window_name(wnd_name) {}
+    data_t(std::string_view msg_name, std::string_view window_name) :
+      dp::msg_t(msg_name), window_name(window_name) {}
 
     std::string window_name;
   };
 
-  namespace input {
+  /*
+    namespace input {
     enum class method : int {
         SendMessage,
         SendInput,
@@ -103,7 +107,7 @@ namespace ui::msg {
       std::string chars;
     };
   } // namespace set_widget_text
-
+*/
   void toggle_enabled();
   auto dispatch(const dp::msg_t& msg) -> dp::result_code;
 } // namespace ui::msg

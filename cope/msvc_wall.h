@@ -5,7 +5,6 @@
 #pragma warning(disable:4514) // unreferenced inline function removed
 #pragma warning(disable:4625) // copy ctor implicitly deleted
 #pragma warning(disable:4626) // copy assignment oper implicitly deleted
-//#pragma warning(disable:4668) // replacing undefined preprocessor macro with '0' for #if/#elif
 #pragma warning(disable:4710) // function not inlined
 #pragma warning(disable:4711) // function selected for inline expansion
 #pragma warning(disable:4820) // struct padding notification

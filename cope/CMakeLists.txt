@@ -2,7 +2,7 @@
 
 add_executable (cope "cope.cpp" "txsetprice.cpp" "log.cpp" "txsellitem.cpp" "Price_t.cpp")
 
-target_link_libraries(cope PUBLIC ui)
+#target_link_libraries(cope PUBLIC ui)
 
 target_include_directories(cope PUBLIC
   "${PROJECT_SOURCE_DIR}/ui"

@@ -112,22 +112,17 @@ namespace sellitem::txn {//Broker::Sell::txn {
   }
 
   auto click_table_row(size_t /*row_index*/) {
-    // maybe this should be a separate ui::msg, so we don't need to muck
-    // with window stuff here. we could dynamic_cast current window to 
-    // TableWindow, and call GetRowRect (or ClickRow directly). click_table_row maybe
     return std::make_unique<msg_t>(ui::msg::name::click_table_row);
   }
 
   auto click_setprice_button() {
-    //using namespace Broker::Sell;
-    return std::make_unique<ui::msg::click::data_t>("brokersell", 1); // kWindowName,
-//      Widget::Id::SetPriceButton);
+//    return std::make_unique<ui::msg::click::data_t>("brokersell", 1);
+    return std::make_unique<dp::msg_t>(ui::msg::name::click_widget);//"brokersell", 1);
   }
 
   auto click_listitem_button() {
-//    using namespace Broker::Sell;
-    return std::make_unique<ui::msg::click::data_t>("brokersell", 2); // kWindowName,
-//      Widget::Id::ListItemButton);
+    return std::make_unique<dp::msg_t>(ui::msg::name::click_widget);//"brokersell", 1);
+//    return std::make_unique<ui::msg::click::data_t>("brokersell", 2);
   }
 
   auto handler() -> handler_t {

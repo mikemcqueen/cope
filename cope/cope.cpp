@@ -9,7 +9,6 @@
 #include "txsetprice.h"
 #include "txsellitem.h"
 #include "ui_msg.h"
-#include "Eq2UiIds.h"
 
 using namespace std::literals;
 
@@ -102,7 +101,7 @@ dp::msg_ptr_t translate(dp::msg_ptr_t /*msg_ptr*/, std::string& out_msg,
 
     if (row.item_price.GetPlat() != 2 && !setprice_clicked) {
       out_msg.assign(ui::msg::name::click_widget); // click set_price_button
-      out_extra.assign(std::to_string(eq2::broker::sell_tab::widget::id::SetPriceButton));
+      //out_extra.assign(std::to_string(eq2::broker::sell_tab::widget::id::SetPriceButton));
       setprice_clicked = true;
       if (xtralog) LogInfo(L"****2 ");
       break;
@@ -116,7 +115,7 @@ dp::msg_ptr_t translate(dp::msg_ptr_t /*msg_ptr*/, std::string& out_msg,
         break;
       }
       out_msg.assign(ui::msg::name::click_widget); // click ok_button
-      out_extra.assign(std::to_string(eq2::broker::set_price_popup::widget::id::OkButton));
+      //out_extra.assign(std::to_string(eq2::broker::set_price_popup::widget::id::OkButton));
       if (xtralog) LogInfo(L"****4  price(%d) row(%d)", row.item_price.GetPlat(), index);
       row.item_price = 2;
       break;
@@ -126,7 +125,7 @@ dp::msg_ptr_t translate(dp::msg_ptr_t /*msg_ptr*/, std::string& out_msg,
       if (!listed_clicked) {
         listed_clicked = true;
         out_msg.assign(ui::msg::name::click_widget); // click list_item_button
-        out_extra.assign(std::to_string(eq2::broker::sell_tab::widget::id::ListItemButton));
+        //out_extra.assign(std::to_string(eq2::broker::sell_tab::widget::id::ListItemButton));
         if (xtralog) LogInfo(L"****5 ");
         break;
       }

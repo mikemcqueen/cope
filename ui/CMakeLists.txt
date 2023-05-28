@@ -1,15 +1,13 @@
 cmake_minimum_required (VERSION 3.21)
 
-add_library(ui UiInput.cpp ui_msg.cpp)
+#target_include_directories(ui PRIVATE
+#  "${PROJECT_SOURCE_DIR}/cope"  # TODO fix, for log.h, dp.h
+#)
 
-target_include_directories(ui PRIVATE
-  "${PROJECT_SOURCE_DIR}/cope"  # TODO fix, for log.h, dp.h
-)
+#set_property(TARGET ui PROPERTY CXX_STANDARD 20)
 
-set_property(TARGET ui PROPERTY CXX_STANDARD 20)
-
-target_compile_options(ui PUBLIC
-  $<$<CXX_COMPILER_ID:MSVC>:/Wall /WX /utf-8 /Gd /permissive->
-  $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic -Werror>
-)
+#target_compile_options(ui PUBLIC
+#  $<$<CXX_COMPILER_ID:MSVC>:/Wall /WX /utf-8 /Gd /permissive->
+#  $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic -Werror>
+#)
 

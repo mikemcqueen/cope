@@ -36,13 +36,12 @@ namespace setprice::txn {
     return dp::msg::validate_name(promise.in(), msg_name);
   }
 
-  auto enter_price_text(int price) {
-    return std::make_unique<ui::msg::send_chars::data_t>("setprice", 1,
-      std::to_string(price));
+  auto enter_price_text(int /*price*/) {
+    return std::make_unique<dp::msg_t>(ui::msg::name::send_chars);
   }
 
   auto click_ok_button() {
-    return std::make_unique<ui::msg::click::data_t>("setprice", 2);
+    return std::make_unique<dp::msg_t>(ui::msg::name::click_widget);
   }
 
   auto handler() -> handler_t {
