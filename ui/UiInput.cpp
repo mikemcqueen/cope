@@ -4,7 +4,7 @@
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-//#include "stdafx.h"
+#include "msvc_wall.h"
 #include <format>
 #include <stdexcept>
 #include "UiInput.h"

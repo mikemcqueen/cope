@@ -1,6 +1,8 @@
-﻿// cope.h : Include file for standard system include files,
-// or project specific include files.
+﻿// cope.h 
 
-#pragma once
+#ifndef INCLUDE_COPE_H
+#define INCLUDE_COPE_H
 
-// TODO: Reference additional headers your program requires here.
+#include "cope_txn.h"
+
+#endif // INCLUDE_COPE_H

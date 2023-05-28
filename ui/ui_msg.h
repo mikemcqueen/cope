@@ -8,8 +8,8 @@
 #define Include_UI_MSG_H
 
 #include <string_view>
-#include "dp.h"
 #include "UiTypes.h"
+#include "cope_msg.h"
 //#include "UiWindowId.h"
 
 namespace ui::msg {

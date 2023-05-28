@@ -1,4 +1,4 @@
-#include "stdafx.h"
+#include "msvc_wall.h"
 #include <optional>
 #include "txsellitem.h"
 #include "txsetprice.h"
@@ -29,11 +29,11 @@ namespace sellitem::txn {//Broker::Sell::txn {
     else {
       msg = &promise.in().as<data_t>();
     }
-    if (row_index < 0 || row_index >= msg->rows.size()) {
-      return dp::result_code::expected_error; // TODO test this
+    if (row_index >= msg->rows.size()) {
+      return dp::result_code::e_fail; // TODO test this
     }
     *row = &msg->rows[row_index];
-    return dp::result_code::success;
+    return dp::result_code::s_ok;
   }
 
   auto is_candidate_row(const Data_t& msg, const state_t& state,
@@ -81,10 +81,10 @@ namespace sellitem::txn {//Broker::Sell::txn {
     validate_row_options options)
   {
     result_code rc = msg::validate(promise.in());
-    if (rc != result_code::success) return rc;
+    if (rc != result_code::s_ok) return rc;
 
     rc = get_row(promise, row_index, out_row);
-    if (rc != result_code::success) return rc;
+    if (rc != result_code::s_ok) return rc;
     const RowData_t& row = **out_row;
 
     if ((options.selected && !row.selected)
@@ -95,7 +95,7 @@ namespace sellitem::txn {//Broker::Sell::txn {
         L"selected(%d), listed(%d), price(%d)",
         options.selected && !row.selected, options.listed && !row.item_listed,
         options.price && (row.item_price.GetPlat() != state.item_price));
-      rc = result_code::expected_error;
+      rc = result_code::e_fail;
     }
     return rc;
   }
@@ -106,16 +106,15 @@ namespace sellitem::txn {//Broker::Sell::txn {
     // build a SetPrice txn state that contains a Broker::Sell::Translate msg
     auto setprice_state = std::make_unique<setprice::txn::state_t>(
       kMsgName, sell_state.item_price);
-    return dp::txn::start_txn_awaitable<setprice::txn::state_t>{
+    return dp::txn::start_awaitable<setprice::txn::state_t>{
       handle, std::move(promise.in_ptr()), std::move(setprice_state)
     };
   }
 
-  auto click_table_row(size_t row_index) {
+  auto click_table_row(size_t /*row_index*/) {
     // maybe this should be a separate ui::msg, so we don't need to muck
     // with window stuff here. we could dynamic_cast current window to 
     // TableWindow, and call GetRowRect (or ClickRow directly). click_table_row maybe
-    row_index;
     return std::make_unique<msg_t>(ui::msg::name::click_table_row);
   }
 
@@ -133,37 +132,18 @@ namespace sellitem::txn {//Broker::Sell::txn {
 
   auto handler() -> handler_t {
 
-    using dp::result_code;
-
-    result_code rc{ result_code::success };
-    const auto& error = [&rc](result_code new_rc) noexcept {
-      rc = new_rc;
-      const auto is_error = (rc != result_code::success);
-      if (is_error) {
-        LogError(L"  txn::sellitem::onepage_handler error(%d)", (int)rc);
-      }
-      return is_error;
-    };
     dp::txn::handler_t setprice_handler{ setprice::txn::handler() };
     state_t state;
 
-    // TODO: helper func for this type, dp::txn::receive() ?
     while (true) {
-      auto& promise = co_await dp::txn::receive_txn_awaitable{ kTxnName, state };
+      auto& promise = co_await dp::txn::receive_awaitable{ kTxnName, state };
+      const auto& error = [&promise](result_code rc) { return promise.set_result(rc).failed(); };
 
-#if 1
       // TODO: better:
-      while (rc != result_code::unexpected_error) { // TODO: e_abort
+      while (!promise.result().unexpected()) {
         auto opt_row_index = get_candidate_row(promise, state);
         if (!opt_row_index.has_value()) break;
         auto row_index = opt_row_index.value();
-#else
-      for (auto opt_row = get_candidate_row(promise, state));
-        (rc != result_code::unexpected_error) && opt_row.has_value();
-        opt_row = get_candidate_row(promise, state))
-      {
-        auto row_index = opt_row.value();
-#endif
         const RowData_t* row;
         if (error(get_row(promise, row_index, &row))) continue;
 
@@ -188,7 +168,7 @@ namespace sellitem::txn {//Broker::Sell::txn {
             { .selected{true}, .price{true}, .listed{true} }))) continue;
         }
       }
-      dp::txn::complete(promise, rc);
+      dp::txn::complete(promise);
     }
   }
 } // namespace Broker::Sell:txn

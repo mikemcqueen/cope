@@ -8,11 +8,11 @@
 //
 /////////////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "msvc_wall.h"
 #include <array>
 #include <charconv>
 #include "Price_t.h"
-#include "Log.h"
+#include "log.h"
 
 using namespace std::literals;
 
@@ -49,20 +49,14 @@ bool Price_t::FromString(std::string_view text) {
 
 std::string Price_t::ToString() const {
   std::array<char, 15> str;
-  std::string result;
+  std::string result{};
   if (plat_ > 0) {
     if (auto [ptr, ec] = std::to_chars(str.data(), str.data() + str.size(), plat_);
       ec == std::errc())
     {
       *ptr++ = 'p';
-      result.assign(str.data(), ptr - str.data());
+      result.assign(str.data(), (size_t)(ptr - str.data()));
     }
   }
-#if 0
-  // lets just say no; result.empty() means "0p"
-  else {
-    //result.assign(std::string_view(std::make_error_code(ec).message()));
-  }
-#endif
   return result;
 }

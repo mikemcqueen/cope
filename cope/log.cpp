@@ -1,9 +1,16 @@
 // Log.cpp
 
+#include "msvc_wall.h"
 #include <cstdarg>
 #include <cstdio>
 #include <stdexcept>
 #include "Log.h"
+
+LogLevel log_level = LogLevel::none;
+
+void SetLogLevel(LogLevel level) { 
+  log_level = level;
+}
 
 void LogString(const wchar_t* pszBuf) {
   wprintf(L"%ls", pszBuf);
@@ -52,6 +59,7 @@ void LogAlways(const wchar_t* pszFormat, ...) {
 }
 
 void LogInfo(const wchar_t* pszFormat, ...) {
+  if (log_level < LogLevel::info) return;
   wchar_t szBuf[256];
   int Len = InitLogBuffer(szBuf, _countof(szBuf), L"INF");
   va_list marker;
@@ -63,6 +71,7 @@ void LogInfo(const wchar_t* pszFormat, ...) {
 }
 
 void LogWarning(const wchar_t* pszFormat, ...) {
+  if (log_level < LogLevel::warning) return;
   wchar_t szBuf[256];
   int Len = InitLogBuffer(szBuf, _countof(szBuf), L"WRN");
   va_list marker;
@@ -74,6 +83,7 @@ void LogWarning(const wchar_t* pszFormat, ...) {
 }
 
 void LogError(const wchar_t* pszFormat, ...) {
+  if (log_level < LogLevel::error) return;
   wchar_t szBuf[256];
   int Len = InitLogBuffer(szBuf, _countof(szBuf), L"ERR");
   va_list marker;

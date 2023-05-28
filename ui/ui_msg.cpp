@@ -1,4 +1,4 @@
-#include "dp.h"
+#include "msvc_wall.h"
 #include "ui_msg.h"
 #include "UiInput.h"
 #include "log.h"
@@ -17,11 +17,11 @@ namespace ui::msg {
 
   result_code validate(const dp::msg_t& msg) {
     msg;
-    return result_code::success;
+    return result_code::s_ok;
   }
 
   result_code validate_window(std::string_view window_name, HWND* result_hwnd) {
-    result_code rc = result_code::success;
+    result_code rc = result_code::s_ok;
 
     // TODO: Shouldn't we use GetMainWindow() for the GetForegroundWindow() check?
     HWND hwnd = nullptr; // m_Window.GetHwnd(window_name);
@@ -29,14 +29,14 @@ namespace ui::msg {
       || (hwnd != ::GetForegroundWindow()))
     {
       LogError(L"ui::msg::validate_window failed for hwnd (%d)", hwnd);
-      return result_code::expected_error;
+      return result_code::e_fail;
     }
     const ui::Window::Handle_t top{ nullptr }; // m_Window.GetTopWindow() };
     // TODO : Window::IsParent
     if ((top.hWnd != hwnd)) { // && !util::IsParent(top.hWnd, hwnd)) {
       LogError(L"ui::msg::validate_window: window (%S) is not top"
         "window or a child of top window (%d)", window_name.data(), top.WindowId);
-      return result_code::expected_error;
+      return result_code::e_fail;
     }
     if (result_hwnd) {
       *result_hwnd = hwnd;
@@ -45,17 +45,17 @@ namespace ui::msg {
   }
 
   result_code click_point(const click::data_t& msg) {
-    result_code rc = result_code::success;
+    result_code rc = result_code::s_ok;
     POINT point = msg.destination.point;
     LogInfo(L"click_point(%S, (%d), %d))", msg.window_name.data(), point.x, point.y);
     if (!enabled()) return rc;
 
     rc = validate(msg);
-    if (rc != result_code::success) return rc;
+    if (rc != result_code::s_ok) return rc;
 
     HWND hwnd{};
     rc = validate_window(msg.window_name, &hwnd);
-    if (rc != result_code::success) return rc;
+    if (rc != result_code::s_ok) return rc;
 
     for (int count = msg.count; count > 0; --count) {
       switch (msg.method) {
@@ -70,39 +70,39 @@ namespace ui::msg {
         break;
       default:
         LogError(L"click_point() invalid method (%d)", (int)msg.method);
-        return result_code::unexpected_error;
+        return result_code::e_unexpected;
       }
     }
     return rc;
   }
 
   result_code click_widget(const click::data_t& msg) {
-    result_code rc = result_code::success;
+    result_code rc = result_code::s_ok;
     const ui::widget_id_t widget_id = msg.destination.widget_id;
     LogInfo(L"click_widget(%S, %d)", msg.window_name.c_str(), widget_id);
     if (!enabled()) return rc;
 
     rc = validate(msg);
-    if (rc != result_code::success) return rc;
+    if (rc != result_code::s_ok) return rc;
 
     HWND hwnd{};
     rc = validate_window(msg.window_name, &hwnd);
-    if (rc != result_code::success) return rc;
+    if (rc != result_code::s_ok) return rc;
 
     //m_Window.GetWindow(msg.window_name).ClickWidget(widget_id, true);
     return rc;
   }
 
   result_code send_characters(const send_chars::data_t& msg) {
-    result_code rc = result_code::success;
+    result_code rc = result_code::s_ok;
 
     LogInfo(L"ui::msg::send_chars(%S)", msg.chars.c_str());
     HWND hwnd;
     rc = validate_window(msg.window_name, &hwnd);
-    if (rc != result_code::success) {
-      return result_code::expected_error;
+    if (rc != result_code::s_ok) {
+      return result_code::e_fail;
     }
-    return result_code::expected_error;
+    return result_code::e_fail;
     /*
     const ui::WidgetId_t widget_id = msg.destination.widget_id;
         if (ui::Widget::Id::Unknown != widget_id) {
@@ -118,7 +118,7 @@ namespace ui::msg {
   }
 
   auto dispatch(const dp::msg_t& msg) -> result_code {
-    result_code rc = result_code::success;
+    result_code rc = result_code::s_ok;
     if (msg.msg_name == name::click_point) {
       rc = click_point(msg.as<click::data_t>());
     } else if (msg.msg_name == name::click_widget) {
@@ -127,7 +127,7 @@ namespace ui::msg {
       rc = send_characters(msg.as<send_chars::data_t>());
     } else {
       LogInfo(L"ui::msg::dispatch() unsupported msg name, %S", msg.msg_name.c_str());
-      rc = result_code::unexpected_error;
+      rc = result_code::e_unexpected;
     }
     return rc;
   }
