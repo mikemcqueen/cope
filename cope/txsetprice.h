@@ -2,7 +2,6 @@
 
 #include <string_view>
 #include "cope.h"
-#include "Price_t.h"
 
 namespace setprice {
   constexpr auto kTxnName{ "txn::set_price" };
@@ -12,7 +11,7 @@ namespace setprice {
     struct data_t : public dp::msg::data_t {
       data_t(int p) : dp::msg::data_t(kMsgName), price(p) {}
 
-      Price_t price;
+      int price;
     };
 
     inline auto validate(const dp::msg_t& msg) {

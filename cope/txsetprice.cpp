@@ -9,16 +9,15 @@ namespace setprice::txn {
   using dp::txn::handler_t;
   using promise_type = handler_t::promise_type;
   using setprice::msg::data_t;
-  using Data_t = setprice::msg::data_t;
 
   auto validate_price(const dp::msg_t& msg, int price) {
 //    using namespace Translate;
     result_code rc = msg::validate(msg);
     if (rc == result_code::s_ok) {
-      const auto& spmsg = msg.as<Data_t>();
-      if (spmsg.price.GetPlat() != price) {
+      const auto& spmsg = msg.as<data_t>();
+      if (spmsg.price != price) {
         LogError(L"setprice::validate_price, price mismatch: "
-          "expected(%d), actual(%d)", price, spmsg.price.GetPlat());
+          "expected(%d), actual(%d)", price, spmsg.price);
         rc = result_code::e_fail; // price mismatch? (this is expected)
       }
       else {

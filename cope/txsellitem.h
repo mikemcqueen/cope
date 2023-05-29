@@ -4,7 +4,6 @@
 #include <string_view>
 #include <vector>
 #include "cope.h"
-#include "Price_t.h"
 
 namespace sellitem {
   inline constexpr auto kTxnName{ "txn::sell_item" };
@@ -13,7 +12,7 @@ namespace sellitem {
   namespace msg {
     struct row_data_t {
       std::string item_name;
-      Price_t item_price;
+      int item_price;
       bool item_listed;
       bool selected;
     };
@@ -48,11 +47,5 @@ namespace sellitem {
     using start_t = dp::txn::start_t<state_t>;
 
     auto handler() -> dp::txn::handler_t;
-
-#if 0
-    inline auto validate_start(const dp::msg_t& txn) {
-      return dp::txn::validate_start<start_t, msg::data_t>(txn, name, msg::name);
-    }
-#endif
   } // namespace txn
 } // namespace sellitem

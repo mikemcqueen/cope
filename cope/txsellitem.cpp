@@ -41,7 +41,7 @@ namespace sellitem::txn {//Broker::Sell::txn {
   {
     auto& row = msg.rows[row_index];
     if (row.item_name == state.item_name) {
-      if ((row.item_price.GetPlat() != state.item_price)
+      if ((row.item_price != state.item_price)
         || !row.item_listed)
       {
         return true;
@@ -89,12 +89,12 @@ namespace sellitem::txn {//Broker::Sell::txn {
 
     if ((options.selected && !row.selected)
       || (options.listed && !row.item_listed)
-      || (options.price && (row.item_price.GetPlat() != state.item_price)))
+      || (options.price && (row.item_price != state.item_price)))
     {
       LogInfo(L"sellitem::validate_row failed, options: "
         L"selected(%d), listed(%d), price(%d)",
         options.selected && !row.selected, options.listed && !row.item_listed,
-        options.price && (row.item_price.GetPlat() != state.item_price));
+        options.price && (row.item_price != state.item_price));
       rc = result_code::e_fail;
     }
     return rc;
@@ -148,7 +148,7 @@ namespace sellitem::txn {//Broker::Sell::txn {
             { .selected{true} }))) continue;
         }
 
-        if (row->item_price.GetPlat() != state.item_price) {
+        if (row->item_price != state.item_price) {
           co_yield click_setprice_button();
           if (error(setprice::msg::validate(promise.in()))) continue;
 

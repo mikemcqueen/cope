@@ -1,11 +1,11 @@
 ﻿cmake_minimum_required (VERSION 3.21)
 
-add_executable (cope "cope.cpp" "txsetprice.cpp" "log.cpp" "txsellitem.cpp" "Price_t.cpp")
+add_executable (cope "cope.cpp" "txsetprice.cpp" "log.cpp" "txsellitem.cpp")
 
 #target_link_libraries(cope PUBLIC ui)
 
 target_include_directories(cope PUBLIC
-  "${PROJECT_SOURCE_DIR}/ui"
+  "${PROJECT_SOURCE_DIR}/include"
 )
 
 set_property(TARGET cope PROPERTY CXX_STANDARD 20)
