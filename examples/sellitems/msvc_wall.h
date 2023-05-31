@@ -8,7 +8,7 @@
 #pragma warning(disable:4710) // function not inlined
 #pragma warning(disable:4711) // function selected for inline expansion
 #pragma warning(disable:4820) // struct padding notification
-#pragma warning(disable:4868) // left-to-right evaluation not enforced in intializer-list
+#pragma warning(disable:4868) // no left-to-right intializer-list evaluation
 #pragma warning(disable:5026) // move ctor implicitly deleted
 #pragma warning(disable:5027) // move assignment oper implicitly deleted
 #pragma warning(disable:5045) // spectre mitigation notification

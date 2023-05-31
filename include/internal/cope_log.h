@@ -25,4 +25,5 @@ namespace cope::log {
     }
   };
 } // namespace cope::log
+
 #endif // INCLUDE_COPE_LOG_H

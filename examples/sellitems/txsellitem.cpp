@@ -8,8 +8,8 @@
 namespace sellitem::txn {
   using namespace std::literals;
 
-  using dp::result_code;
-  using dp::txn::handler_t;
+  using cope::result_code;
+  using cope::txn::handler_t;
   using promise_type = handler_t::promise_type;
   using sellitem::msg::data_t;
   using sellitem::msg::row_data_t;
@@ -19,7 +19,7 @@ namespace sellitem::txn {
     const row_data_t** row)
   {
     const data_t* msg{ nullptr };
-    if (dp::msg::is_start_txn(promise.in())) {
+    if (cope::msg::is_start_txn(promise.in())) {
       const auto& txn = promise.in().as<start_t>();
       msg = &start_t::msg_from(txn).as<data_t>();
     }
@@ -27,10 +27,10 @@ namespace sellitem::txn {
       msg = &promise.in().as<data_t>();
     }
     if (row_index >= msg->rows.size()) {
-      return dp::result_code::e_fail;
+      return cope::result_code::e_fail;
     }
     *row = &msg->rows[row_index];
-    return dp::result_code::s_ok;
+    return cope::result_code::s_ok;
   }
 
   auto is_candidate_row(const data_t& msg, const state_t& state,
@@ -96,26 +96,16 @@ namespace sellitem::txn {
     return rc;
   }
 
-  auto start_txn_setprice(handler_t::handle_t handle, promise_type& promise,
-    const state_t& sell_state)
-  {
-    auto setprice_state = std::make_unique<setprice::txn::state_t>(
-      kMsgName, sell_state.item_price);
-    return dp::txn::start_awaitable<setprice::txn::state_t>{
-      handle, std::move(promise.in_ptr()), std::move(setprice_state)
-    };
-  }
-
   auto click_table_row(size_t /*row_index*/) {
-    return std::make_unique<dp::msg_t>(ui::msg::name::click_table_row);
+    return std::make_unique<cope::msg_t>(ui::msg::name::click_table_row);
   }
 
   auto click_setprice_button() {
-    return std::make_unique<dp::msg_t>(ui::msg::name::click_widget);
+    return std::make_unique<cope::msg_t>(ui::msg::name::click_widget);
   }
 
   auto click_listitem_button() {
-    return std::make_unique<dp::msg_t>(ui::msg::name::click_widget);
+    return std::make_unique<cope::msg_t>(ui::msg::name::click_widget);
   }
 
   auto handler() -> handler_t {
@@ -123,7 +113,7 @@ namespace sellitem::txn {
     state_t state;
 
     while (true) {
-      auto& promise = co_await dp::txn::receive_awaitable{ kTxnName, state };
+      auto& promise = co_await cope::txn::receive_awaitable{ kTxnName, state };
       const auto& error = [&promise](result_code rc) { return promise.set_result(rc).failed(); };
 
       // TODO: better:
@@ -144,7 +134,7 @@ namespace sellitem::txn {
           co_yield click_setprice_button();
           if (error(setprice::msg::validate(promise.in()))) continue;
 
-          co_await start_txn_setprice(setprice_handler.handle(), promise, state);
+          co_await setprice::txn::start(setprice_handler.handle(), promise, state);
           if (error(validate_row(promise, row_index, state, &row,
             { .selected{true}, .price{true} }))) continue;
         }
@@ -155,7 +145,7 @@ namespace sellitem::txn {
             { .selected{true}, .price{true}, .listed{true} }))) continue;
         }
       }
-      dp::txn::complete(promise);
+      cope::txn::complete(promise);
     }
   }
 } // namespace sellitem::txn

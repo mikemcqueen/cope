@@ -42,6 +42,7 @@ namespace cope {
     struct noop_t : data_t {
       noop_t() : data_t(name::kNoOp) {}
     };
+
     inline auto make_noop() {
       return std::make_unique<noop_t>();
     }
@@ -49,9 +50,8 @@ namespace cope {
     inline auto validate_name(const msg_t& msg, std::string_view msg_name) {
       result_code rc = result_code::s_ok;
       if (msg.msg_name != msg_name) {
-/*        log::info("msg::validate_name() mismatch, expected({}), actual({})",
+        log::info("msg::validate_name() mismatch, expected({}), actual({})",
           msg_name, msg.msg_name);
-*/
         rc = result_code::e_unexpected_msg_name;
       }
       return rc;

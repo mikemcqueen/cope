@@ -15,7 +15,7 @@
 namespace cope::txn {
   enum class state : int {
     ready = 0,
-    started,
+    running,
     complete
   };
 
@@ -127,8 +127,8 @@ namespace cope::txn {
       result_t set_result(result_code rc) { result_.set(rc); return result_;  }
 
       state txn_state() const { return txn_state_; }
-      bool txn_started() const { return txn_state_ == state::started; }
-      bool txn_complete() const { return txn_state_ == state::complete; }
+      bool txn_ready() const { return txn_state_ == state::ready; }
+      bool txn_running() const { return txn_state_ == state::running; }
       void set_txn_state(state txn_state) {
         txn_state_ = txn_state;
         log::info("{}:set_txn_state({})", txn_name_, txn_state_);
@@ -168,8 +168,8 @@ namespace cope::txn {
     auto& promise() const { return coro_handle_.promise(); }
 
     // TODO: this logic should be in an awaitable?
-    [[nodiscard]] msg_ptr_t&& send_value(msg_ptr_t msg_ptr) {
-      validate_send_value_msg(*msg_ptr.get());
+    [[nodiscard]] msg_ptr_t&& send_msg(msg_ptr_t msg_ptr) {
+      validate_send_msg(*msg_ptr.get());
       auto& active_p = active_handle().promise();
       active_p.emplace_in(std::move(msg_ptr));
       log::info("Sending {} to {}", active_p.in().msg_name,
@@ -188,13 +188,13 @@ namespace cope::txn {
     handle_t root_handle() const { return promise().root_handle(); }
     auto& txn_name() const { return promise().txn_name(); }
 
-    void validate_send_value_msg(const msg_t& msg) const {
+    void validate_send_msg(const msg_t& msg) const {
       if (msg::is_start_txn(msg)) {
-        if (handle().promise().txn_started()) {
-          throw std::logic_error("send_value(): txn already started");
+        if (handle().promise().txn_running()) {
+          throw std::logic_error("send_msg(): txn already running");
         }
-      } else if (!handle().promise().txn_started()) {
-        throw std::logic_error("send_value(): txn not started");
+      } else if (!handle().promise().txn_running()) {
+        throw std::logic_error("send_msg(): txn not running");
       }
     }
 
@@ -208,9 +208,9 @@ namespace cope::txn {
 
     std::coroutine_handle<> await_suspend(handler_t::handle_t h) {
       handler_t::basic_awaitable::await_suspend(h);
-      if (promise().txn_state() == state::started) {
+      if (promise().txn_running()) {
         throw std::logic_error(std::format("txn::receive_awaitable({}) cannot "
-          "be used with txn in 'started' state", promise().txn_name()));
+          "be used with txn in 'running' state", promise().txn_name()));
       }
       promise().set_txn_name(txn_name_);
       if (promise().txn_state() == state::complete) {
@@ -232,11 +232,11 @@ namespace cope::txn {
           return dst_handle; // symmetric transfer to dst (prev) handle
         }
         else if (promise().in_ptr()) {
-          // txn complete, no prev handle; root txn returning to send_value()
+          // txn complete, no prev handle; root txn returning to send_msg()
           // move promise.in to root_promise.out
           auto& root_promise = promise().root_handle().promise();
           root_promise.emplace_out(std::move(promise().in_ptr()));
-          log::info("  returning a {} to send_value()",
+          log::info("  returning a {} to send_msg()",
             root_promise.out().msg_name);
         }
         else {
@@ -267,7 +267,7 @@ namespace cope::txn {
       state_ = std::move(*txn_start.state_ptr.get());
       // move msg_ptr from incoming txn to promise().in()
       promise().emplace_in(std::move(txn_start.msg_ptr));
-      promise().set_txn_state(state::started);
+      promise().set_txn_state(state::running);
       return promise();
     }
 
@@ -323,8 +323,8 @@ namespace cope::txn {
   }
 
   inline void complete(handler_t::promise_type& promise) {
-    if (!promise.txn_started()) {
-      throw std::logic_error("txn::complete(): txn is not in started state");
+    if (!promise.txn_running()) {
+      throw std::logic_error("txn::complete(): txn is not in running state");
     }
     promise.set_txn_state(state::complete);
   }
@@ -339,7 +339,7 @@ struct std::formatter<cope::txn::state> {
     using cope::txn::state;
     static std::unordered_map<state, std::string> state_name_map = {
       { state::ready, "ready" },
-      { state::started, "started" },
+      { state::running, "running" },
       { state::complete, "complete" }
     };
     return std::format_to(ctx.out(), "{}", state_name_map[s]);
