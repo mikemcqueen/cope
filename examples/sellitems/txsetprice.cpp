@@ -3,25 +3,26 @@
 #include "msvc_wall.h"
 #include "txsetprice.h"
 #include "ui_msg.h"
+#include "internal/cope_log.h"
 
 namespace setprice::txn {
   using dp::result_code;
   using dp::txn::handler_t;
   using promise_type = handler_t::promise_type;
   using setprice::msg::data_t;
+  namespace log = cope::log;
 
   auto validate_price(const dp::msg_t& msg, int price) {
-//    using namespace Translate;
     result_code rc = msg::validate(msg);
     if (rc == result_code::s_ok) {
       const auto& spmsg = msg.as<data_t>();
       if (spmsg.price != price) {
-        LogError(L"setprice::validate_price, price mismatch: "
-          "expected(%d), actual(%d)", price, spmsg.price);
+        log::info("setprice::validate_price, price mismatch: "
+          "expected({}), actual({})", price, spmsg.price);
         rc = result_code::e_fail; // price mismatch? (this is expected)
       }
       else {
-        LogInfo(L"setprice::validate_price, prices match(%d)", price);
+        log::info("setprice::validate_price, prices match({})", price);
       }
     }
     return rc;
@@ -61,4 +62,4 @@ namespace setprice::txn {
       dp::txn::complete(promise);
     }
   }
-} // namespace Broker::SetPrice::Txn
+} // namespace setprice::txn

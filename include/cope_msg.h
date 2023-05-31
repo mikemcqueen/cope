@@ -7,12 +7,11 @@
 #include <string>
 #include <string_view>
 #include "cope_result.h"
-//#include "DpEvent.h"
-#include "log.h"
+#include "internal/cope_log.h"
 
 using namespace std::literals;
 
-namespace dp {
+namespace cope {
   namespace msg { struct data_t; }
 
   using msg_t = msg::data_t;
@@ -21,7 +20,6 @@ namespace dp {
   namespace msg {
     namespace name {
       constexpr std::string_view kTxnStart{ "msg::txn_start" };
-      constexpr std::string_view kEventWapper{ "msg::event_wrapper" };
       constexpr std::string_view kNoOp{ "msg::no_op" };
     }
 
@@ -48,32 +46,12 @@ namespace dp {
       return std::make_unique<noop_t>();
     }
       
-/*
-    struct event_wrapper_base_t : data_t {
-      event_wrapper_base_t() : data_t(name::kEventWapper) {}
-      virtual ~event_wrapper_base_t() = default;
-      virtual DP::Event::Data_t* get_event_data() = 0;
-    };
-
-    template<typename T> // TODO: requires inherit from Event::Data_t
-    struct event_wrapper_t : event_wrapper_base_t {
-      event_wrapper_t(std::unique_ptr<T> event_ptr) :
-        event_ptr(std::move(event_ptr)) {}
-      event_wrapper_t() = delete;
-
-      DP::Event::Data_t* get_event_data() override {
-        return reinterpret_cast<DP::Event::Data_t*>(event_ptr.get());
-      }
-
-      std::unique_ptr<T> event_ptr;
-    };
-*/
-
     inline auto validate_name(const msg_t& msg, std::string_view msg_name) {
       result_code rc = result_code::s_ok;
       if (msg.msg_name != msg_name) {
-        LogError(L"msg::validate_name() mismatch, expected(%S), actual(%S)",
-          msg_name.data(), msg.msg_name.c_str());
+/*        log::info("msg::validate_name() mismatch, expected({}), actual({})",
+          msg_name, msg.msg_name);
+*/
         rc = result_code::e_unexpected_msg_name;
       }
       return rc;
@@ -83,8 +61,8 @@ namespace dp {
     auto validate(const msg_t& msg, std::string_view msg_name) {
       result_code rc = validate_name(msg, msg_name);
       if (succeeded(rc) && !dynamic_cast<const msgT*>(&msg)) {
-        LogWarning(L"msg::validate(%S) type mismatch, expected(%S), actual(%S)",
-          msg_name.data(), msg.msg_name.c_str());
+        log::info("msg::validate() type mismatch, expected({}), actual({})",
+          msg_name, msg.msg_name);
         rc = result_code::e_unexpected_msg_type;
       }
       return rc;
@@ -94,6 +72,6 @@ namespace dp {
       return msg.msg_name == msg::name::kTxnStart;
     }
   } // namespace msg
-} // namespace dp
+} // namespace cope
 
 #endif // INCLUDE_COPE_MSG_H

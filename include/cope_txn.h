@@ -10,9 +10,9 @@
 #include <stdexcept>
 #include <string_view>
 #include "cope_msg.h"
-#include "log.h"
+#include "internal/cope_log.h"
 
-namespace dp::txn {
+namespace cope::txn {
   enum class state : int {
     ready = 0,
     started,
@@ -88,15 +88,15 @@ namespace dp::txn {
       initial_awaitable initial_suspend() noexcept { return {}; }
       std::suspend_always final_suspend() noexcept { return {}; }
       void unhandled_exception() {
-        LogError(L"************* Exception in %S **************",
-          active_handle_.promise().txn_name().c_str());
+        log::info("*** unhandled_exception() in {}",
+          active_handle_.promise().txn_name());
         throw;
       }
       void return_void() { throw std::runtime_error("co_return not allowed"); }
       // TODO: return private awaitable w/o txn name?
       basic_awaitable yield_value(msg_ptr_t msg_ptr) {
-        LogInfo(L"Yielding %S from %S...", msg_ptr.get()->msg_name.c_str(),
-          txn_name().c_str());
+        log::info("Yielding {} from {}...", msg_ptr.get()->msg_name,
+          txn_name());
         root_handle_.promise().emplace_out(std::move(msg_ptr));
         return {};
       }
@@ -110,7 +110,7 @@ namespace dp::txn {
       auto prev_handle() const { return prev_handle_; }
       void set_prev_handle(handle_t h) { prev_handle_.emplace(h); }
 
-      // const auto& in() const { return *in_ptr_.get(); }
+      // const auto&?
       auto& in() const { return *in_ptr_.get(); }
       void emplace_in(msg_ptr_t in_ptr) { in_ptr_ = std::move(in_ptr); }
       [[nodiscard]] msg_ptr_t&& in_ptr() { return std::move(in_ptr_); }
@@ -130,9 +130,8 @@ namespace dp::txn {
       bool txn_started() const { return txn_state_ == state::started; }
       bool txn_complete() const { return txn_state_ == state::complete; }
       void set_txn_state(state txn_state) {
-        LogInfo(L"%S:set_txn_state(%S)", txn_name_.c_str(),
-          std::format("{}", txn_state).c_str());
         txn_state_ = txn_state;
+        log::info("{}:set_txn_state({})", txn_name_, txn_state_);
       }
 
     private:
@@ -144,7 +143,7 @@ namespace dp::txn {
       std::string txn_name_;
       state txn_state_ = state::ready;
       result_t result_;
-    };
+    }; // struct promise_type
 
     // TODO: private?
     struct initial_awaitable {
@@ -158,12 +157,12 @@ namespace dp::txn {
     };
 
   public:
-    handler_t(handler_t&) = delete;
-    handler_t operator=(handler_t&) = delete;
-
     explicit handler_t(promise_type* p) noexcept :
       coro_handle_(handle_t::from_promise(*p)) {}
     ~handler_t() { if (coro_handle_) coro_handle_.destroy(); }
+
+    handler_t(handler_t&) = delete;
+    handler_t operator=(handler_t&) = delete;
 
     auto handle() const { return coro_handle_; }
     auto& promise() const { return coro_handle_.promise(); }
@@ -173,15 +172,14 @@ namespace dp::txn {
       validate_send_value_msg(*msg_ptr.get());
       auto& active_p = active_handle().promise();
       active_p.emplace_in(std::move(msg_ptr));
-      LogInfo(L"Sending %S to %S", active_p.in().msg_name.c_str(),
-        active_p.txn_name().c_str());
+      log::info("Sending {} to {}", active_p.in().msg_name,
+        active_p.txn_name());
       active_handle().resume();
       // active_handle() may have changed at this point
       auto& root_p = root_handle().promise();
-      LogInfo(L"Received %S from %S", root_p.out_ptr() ?
-        root_p.out().msg_name.c_str() : "nothing",
-        active_handle().promise().txn_name().c_str());
-      // meh, move necessary?
+      log::info("Received {} from {}", root_p.out_ptr() ?
+        root_p.out().msg_name : "nothing",
+        active_handle().promise().txn_name());
       return std::move(root_p.out_ptr());
     }
 
@@ -193,13 +191,9 @@ namespace dp::txn {
     void validate_send_value_msg(const msg_t& msg) const {
       if (msg::is_start_txn(msg)) {
         if (handle().promise().txn_started()) {
-          LogError(L"send_value() %S already started", handle().promise()
-            .txn_name().c_str());
           throw std::logic_error("send_value(): txn already started");
         }
       } else if (!handle().promise().txn_started()) {
-        LogError(L"send_value() %S is not started", handle().promise()
-          .txn_name().c_str());
         throw std::logic_error("send_value(): txn not started");
       }
     }
@@ -215,7 +209,7 @@ namespace dp::txn {
     std::coroutine_handle<> await_suspend(handler_t::handle_t h) {
       handler_t::basic_awaitable::await_suspend(h);
       if (promise().txn_state() == state::started) {
-        throw std::logic_error(std::format("receive_awaitable({}), cannot "
+        throw std::logic_error(std::format("txn::receive_awaitable({}) cannot "
           "be used with txn in 'started' state", promise().txn_name()));
       }
       promise().set_txn_name(txn_name_);
@@ -227,8 +221,8 @@ namespace dp::txn {
           auto& dst_promise = dst_handle.promise();
           // move promise.in to dst_promise.in
           dst_promise.emplace_in(std::move(promise().in_ptr()));
-          LogInfo(L"  returning a %S to %S", dst_promise.in().msg_name.c_str(),
-            dst_promise.txn_name().c_str());
+          log::info("  returning a {} to {}", dst_promise.in().msg_name,
+            dst_promise.txn_name());
           auto& root_promise = promise().root_handle().promise();
           root_promise.set_active_handle(dst_handle);
           // reset all handles of this completed coro to itself
@@ -242,15 +236,15 @@ namespace dp::txn {
           // move promise.in to root_promise.out
           auto& root_promise = promise().root_handle().promise();
           root_promise.emplace_out(std::move(promise().in_ptr()));
-          LogInfo(L"  returning a %S to send_value()",
-            root_promise.out().msg_name.c_str());
+          log::info("  returning a {} to send_value()",
+            root_promise.out().msg_name);
         }
         else {
           // txn complete, no prev handle, no "in" value; not possible
           throw std::runtime_error("impossible state");
         }
       }
-      LogInfo(L"  %S - returning noop_coroutine", promise().txn_name().c_str());
+      log::info("  {} - returning noop_coroutine", promise().txn_name());
       return std::noop_coroutine();
     }
 
@@ -260,8 +254,8 @@ namespace dp::txn {
       // validate this is a start_txn message for the txn we are expecting.
       promise().set_result(start_t::validate(txn, txn_name_));
       if (promise().result().failed()) {
-        LogError(L"Resuming %S... ****ERROR**** %d", txn_name_.c_str(),
-          promise().result().code);
+        log::info("ERROR: resuming {}, ({})", txn_name_,
+          promise().result());
         return promise();
       }
       auto& txn_start = dynamic_cast<start_t&>(txn);
@@ -295,13 +289,13 @@ namespace dp::txn {
 
     auto await_suspend(handle_t h) {
       handler_t::basic_awaitable::await_suspend(h);
-      LogInfo(L"start_txn_awaitable: Suspending %S...",
-        promise().txn_name().c_str());
+      log::info("start_txn_awaitable: Suspending {}...",
+        promise().txn_name());
       auto& dst_promise = dst_handle_.promise();
       dst_promise.emplace_in(make_start_txn<stateT>(dst_promise.txn_name(),
         std::move(msg_ptr_), std::move(state_ptr_)));
-      LogInfo(L"  sending a %S to %S", dst_promise.in().msg_name.c_str(),
-        dst_promise.txn_name().c_str());
+      log::info("  sending a {} to {}", dst_promise.in().msg_name,
+        dst_promise.txn_name());
       dst_promise.set_root_handle(promise().root_handle());
       dst_promise.set_prev_handle(promise().active_handle());
       auto& root_promise = promise().root_handle().promise();
@@ -310,7 +304,7 @@ namespace dp::txn {
     }
 
     auto& await_resume() {
-      LogInfo(L"Resuming %S...", promise().txn_name().c_str());
+      log::info("Resuming {}...", promise().txn_name());
       return promise();
     }
 
@@ -334,15 +328,15 @@ namespace dp::txn {
     }
     promise.set_txn_state(state::complete);
   }
-} // namespace dp::txn
+} // namespace cope::txn
 
 template <>
-struct std::formatter<dp::txn::state> {
+struct std::formatter<cope::txn::state> {
   constexpr auto parse(std::format_parse_context& ctx) {
     return ctx.begin();
   }
-  auto format(const dp::txn::state s, std::format_context& ctx) {
-    using dp::txn::state;
+  auto format(const cope::txn::state s, std::format_context& ctx) {
+    using cope::txn::state;
     static std::unordered_map<state, std::string> state_name_map = {
       { state::ready, "ready" },
       { state::started, "started" },

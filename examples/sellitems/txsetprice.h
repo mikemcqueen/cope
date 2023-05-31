@@ -1,7 +1,12 @@
-#pragma once
+// txsetprice.h
+
+#ifndef INCLUDE_TXSETPRICE_H
+#define INCLUDE_TXSETPRICE_H
 
 #include <string_view>
 #include "cope.h"
+
+namespace dp = cope;
 
 namespace setprice {
   constexpr auto kTxnName{ "txn::set_price" };
@@ -9,7 +14,7 @@ namespace setprice {
 
   namespace msg {
     struct data_t : public dp::msg::data_t {
-      data_t(int p) : dp::msg::data_t(kMsgName), price(p) {}
+      data_t(int price) : dp::msg::data_t(kMsgName), price(price) {}
 
       int price;
     };
@@ -17,7 +22,7 @@ namespace setprice {
     inline auto validate(const dp::msg_t& msg) {
       return dp::msg::validate<data_t>(msg, kMsgName);
     }
-  }
+  } // namespace msg
 
   namespace txn {
     struct state_t {
@@ -28,5 +33,7 @@ namespace setprice {
     using start_t = dp::txn::start_t<state_t>;
 
     auto handler() -> dp::txn::handler_t;
-  }
-}
+  } // namespace msg
+} // namespace setprice
+
+#endif // INCLUDE_TXSETPRICE_H

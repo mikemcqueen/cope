@@ -3,4 +3,5 @@
 * support command line -q, -i<iter> (necessitates reset_state())
 * rename ui "examples", add sellitems  executable project
   * remove all references to "Broker::*"
-* Can i get rid of Price_t?
+* dp:: -> cope::
+* manage "complete" state in better way than returning "done"?

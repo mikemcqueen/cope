@@ -1,7 +1,7 @@
 #ifndef INCLUDE_MSVC_WALL_H
 #define INCLUDE_MSVC_WALL_H
 
-#if _MSC_VER // MSVC /Wall is too verbose. Make it quieter.
+#ifdef _MSC_VER // MSVC /Wall is too verbose. Make it quieter.
 #pragma warning(disable:4514) // unreferenced inline function removed
 #pragma warning(disable:4625) // copy ctor implicitly deleted
 #pragma warning(disable:4626) // copy assignment oper implicitly deleted

@@ -5,6 +5,8 @@
 #include <vector>
 #include "cope.h"
 
+namespace dp = cope;
+
 namespace sellitem {
   inline constexpr auto kTxnName{ "txn::sell_item" };
   inline constexpr auto kMsgName{ "msg::sell_item" };

@@ -2,6 +2,4 @@
 
 project ("cope")
 
-add_subdirectory ("cope")
-add_subdirectory ("ui")
-
+add_subdirectory ("examples")

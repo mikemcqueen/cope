@@ -3,40 +3,37 @@
 #include "txsellitem.h"
 #include "txsetprice.h"
 #include "ui_msg.h"
-//#include "BrokerSellTypes.h"
+#include "internal/cope_log.h"
 
-namespace sellitem::txn {//Broker::Sell::txn {
+namespace sellitem::txn {
   using namespace std::literals;
 
-  using dp::msg_t;
   using dp::result_code;
   using dp::txn::handler_t;
   using promise_type = handler_t::promise_type;
   using sellitem::msg::data_t;
-  using Data_t = sellitem::msg::data_t;
-  using RowData_t = msg::row_data_t;
-
+  using sellitem::msg::row_data_t;
+  namespace log = cope::log;
 
   auto get_row(const promise_type& promise, size_t row_index,
-    const RowData_t** row)
+    const row_data_t** row)
   {
-    const Data_t* msg{ nullptr };
+    const data_t* msg{ nullptr };
     if (dp::msg::is_start_txn(promise.in())) {
       const auto& txn = promise.in().as<start_t>();
-      msg = &start_t::msg_from(txn).as<Data_t>();
-      //msg = dynamic_cast<const msg::data_t*>(&txn::start_t::msg_from(txn));
+      msg = &start_t::msg_from(txn).as<data_t>();
     }
     else {
       msg = &promise.in().as<data_t>();
     }
     if (row_index >= msg->rows.size()) {
-      return dp::result_code::e_fail; // TODO test this
+      return dp::result_code::e_fail;
     }
     *row = &msg->rows[row_index];
     return dp::result_code::s_ok;
   }
 
-  auto is_candidate_row(const Data_t& msg, const state_t& state,
+  auto is_candidate_row(const data_t& msg, const state_t& state,
     size_t row_index)
   {
     auto& row = msg.rows[row_index];
@@ -50,24 +47,23 @@ namespace sellitem::txn {//Broker::Sell::txn {
     return false;
   }
 
-  auto get_candidate_row(const Data_t& msg, const state_t& state)
+  auto get_candidate_row(const data_t& msg, const state_t& state)
     -> std::optional<size_t>
   {
-    using result_t = std::optional<size_t>;
     for (size_t row{}; row < msg.rows.size(); ++row) {
       if (is_candidate_row(msg, state, row)) {
-        LogInfo(L"get_candidate_row(%d)", row);
-        return result_t(row);
+        log::info("get_candidate_row({})", row);
+        return std::optional(row);
       }
     }
-    LogInfo(L"get_candidate_row(none)");
+    log::info("get_candidate_row(none)");
     return std::nullopt;
   }
 
   auto get_candidate_row(const promise_type& promise, const txn::state_t& state)
     -> std::optional<size_t>
   {
-    return get_candidate_row(promise.in().as<Data_t>(), state);
+    return get_candidate_row(promise.in().as<data_t>(), state);
   }
 
   struct validate_row_options {
@@ -77,7 +73,7 @@ namespace sellitem::txn {//Broker::Sell::txn {
   };
 
   auto validate_row(const promise_type& promise, size_t row_index,
-    const state_t& state, const RowData_t** out_row,
+    const state_t& state, const row_data_t** out_row,
     validate_row_options options)
   {
     result_code rc = msg::validate(promise.in());
@@ -85,14 +81,14 @@ namespace sellitem::txn {//Broker::Sell::txn {
 
     rc = get_row(promise, row_index, out_row);
     if (rc != result_code::s_ok) return rc;
-    const RowData_t& row = **out_row;
+    const row_data_t& row = **out_row;
 
     if ((options.selected && !row.selected)
       || (options.listed && !row.item_listed)
       || (options.price && (row.item_price != state.item_price)))
     {
-      LogInfo(L"sellitem::validate_row failed, options: "
-        L"selected(%d), listed(%d), price(%d)",
+      log::info("sellitem::validate_row failed, options: "
+        "selected({}), listed({}), price({})",
         options.selected && !row.selected, options.listed && !row.item_listed,
         options.price && (row.item_price != state.item_price));
       rc = result_code::e_fail;
@@ -103,7 +99,6 @@ namespace sellitem::txn {//Broker::Sell::txn {
   auto start_txn_setprice(handler_t::handle_t handle, promise_type& promise,
     const state_t& sell_state)
   {
-    // build a SetPrice txn state that contains a Broker::Sell::Translate msg
     auto setprice_state = std::make_unique<setprice::txn::state_t>(
       kMsgName, sell_state.item_price);
     return dp::txn::start_awaitable<setprice::txn::state_t>{
@@ -112,22 +107,19 @@ namespace sellitem::txn {//Broker::Sell::txn {
   }
 
   auto click_table_row(size_t /*row_index*/) {
-    return std::make_unique<msg_t>(ui::msg::name::click_table_row);
+    return std::make_unique<dp::msg_t>(ui::msg::name::click_table_row);
   }
 
   auto click_setprice_button() {
-//    return std::make_unique<ui::msg::click::data_t>("brokersell", 1);
-    return std::make_unique<dp::msg_t>(ui::msg::name::click_widget);//"brokersell", 1);
+    return std::make_unique<dp::msg_t>(ui::msg::name::click_widget);
   }
 
   auto click_listitem_button() {
-    return std::make_unique<dp::msg_t>(ui::msg::name::click_widget);//"brokersell", 1);
-//    return std::make_unique<ui::msg::click::data_t>("brokersell", 2);
+    return std::make_unique<dp::msg_t>(ui::msg::name::click_widget);
   }
 
   auto handler() -> handler_t {
-
-    dp::txn::handler_t setprice_handler{ setprice::txn::handler() };
+    handler_t setprice_handler{ setprice::txn::handler() };
     state_t state;
 
     while (true) {
@@ -139,7 +131,7 @@ namespace sellitem::txn {//Broker::Sell::txn {
         auto opt_row_index = get_candidate_row(promise, state);
         if (!opt_row_index.has_value()) break;
         auto row_index = opt_row_index.value();
-        const RowData_t* row;
+        const row_data_t* row;
         if (error(get_row(promise, row_index, &row))) continue;
 
         if (!row->selected) {
@@ -166,4 +158,4 @@ namespace sellitem::txn {//Broker::Sell::txn {
       dp::txn::complete(promise);
     }
   }
-} // namespace Broker::Sell:txn
+} // namespace sellitem::txn
