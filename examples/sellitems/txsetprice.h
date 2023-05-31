@@ -35,9 +35,9 @@ namespace setprice {
     inline auto start(handler_t::handle_t handle, handler_t::promise_type& promise,
       const sellitem::txn::state_t& sell_state)
     {
-      auto setprice_state = std::make_unique<setprice::txn::state_t>(
-        kMsgName, sell_state.item_price);
-      return cope::txn::start_awaitable<setprice::txn::state_t>{
+      auto setprice_state = std::make_unique<state_t>(
+        sellitem::kMsgName, sell_state.item_price);
+      return cope::txn::start_awaitable<state_t>{
         handle, std::move(promise.in_ptr()), std::move(setprice_state)
       };
     }

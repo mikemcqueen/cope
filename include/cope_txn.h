@@ -18,7 +18,25 @@ namespace cope::txn {
     running,
     complete
   };
+}
+    
+template <>
+struct std::formatter<cope::txn::state, char> {
+  constexpr auto parse(std::format_parse_context& ctx) {
+    return ctx.begin();
+  }
+  auto format(cope::txn::state& st, std::format_context& ctx) {
+    using cope::txn::state;
+    static std::unordered_map<state, std::string> state_name_map = {
+      { state::ready, "ready" },
+      { state::running, "running" },
+      { state::complete, "complete" }
+    };
+    return std::format_to(ctx.out(), "{}", state_name_map[st]);
+  }
+};
 
+namespace cope::txn {
   struct data_t : msg::data_t {
     data_t(std::string_view msg_name, std::string_view txn_name) :
       msg::data_t(msg_name), txn_name(txn_name) {}
@@ -277,6 +295,14 @@ namespace cope::txn {
   }; // struct receive_awaitable
 
   template<typename stateT>
+  auto make_start_txn(std::string_view txn_name, msg_ptr_t msg_ptr,
+    typename start_t<stateT>::state_ptr_t state_ptr)
+  {
+    return std::make_unique<start_t<stateT>>(txn_name, std::move(msg_ptr),
+      std::move(state_ptr));
+  }
+
+  template<typename stateT>
   struct start_awaitable : handler_t::basic_awaitable {
     using handle_t = handler_t::handle_t;
     using state_ptr_t = start_t<stateT>::state_ptr_t;
@@ -314,14 +340,6 @@ namespace cope::txn {
     state_ptr_t state_ptr_;
   }; // struct start_awaitable
 
-  template<typename stateT>
-  auto make_start_txn(std::string_view txn_name, msg_ptr_t msg_ptr,
-    typename start_t<stateT>::state_ptr_t state_ptr)
-  {
-    return std::make_unique<start_t<stateT>>(txn_name, std::move(msg_ptr),
-      std::move(state_ptr));
-  }
-
   inline void complete(handler_t::promise_type& promise) {
     if (!promise.txn_running()) {
       throw std::logic_error("txn::complete(): txn is not in running state");
@@ -329,21 +347,5 @@ namespace cope::txn {
     promise.set_txn_state(state::complete);
   }
 } // namespace cope::txn
-
-template <>
-struct std::formatter<cope::txn::state> {
-  constexpr auto parse(std::format_parse_context& ctx) {
-    return ctx.begin();
-  }
-  auto format(const cope::txn::state s, std::format_context& ctx) {
-    using cope::txn::state;
-    static std::unordered_map<state, std::string> state_name_map = {
-      { state::ready, "ready" },
-      { state::running, "running" },
-      { state::complete, "complete" }
-    };
-    return std::format_to(ctx.out(), "{}", state_name_map[s]);
-  }
-};
 
 #endif // INCLUDE_COPE_TXN_H

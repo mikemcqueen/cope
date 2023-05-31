@@ -1,6 +1,5 @@
-* make the sellitems sample more pretty.
+* make the sellitems sample more pretty. (?)
 * add compiler options
-* support command line -q, -i<iter> (necessitates reset_state())
+* support command line -q, -i<iter>
 * remove all references to "Broker::*"
-* dp:: -> cope::
-* manage "complete" state in better way than returning "done"?
+* WSL build
