@@ -1,3 +1,16 @@
+* benchmarks:
+  * execute a txn, return immediately
+  * execute a txn, eat N messages, return
+  * execute a txn, which executes txn that returns immediately
+  * execute a txn, process N messages which each executes txn that return immediately
+
+  * with/without std::any
+  * with/without std::unique_ptr (including state)
+    * small state, large state
+    * w and w/o AVX2
+  * with/without string msg_name/txn_name (templatize IdT)
+
+
 * make the sellitems sample more pretty. (?)
 * add compiler options (linux especially?)
 * support command line -q, -i<iter>

@@ -2,4 +2,5 @@
 
 project ("cope")
 
+add_subdirectory ("benchmarks")
 add_subdirectory ("examples")

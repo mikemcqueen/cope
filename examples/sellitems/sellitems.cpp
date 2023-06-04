@@ -180,17 +180,17 @@ namespace {
 } // namespace (anon)
 
 int main() {
-  using namespace std::chrono;
   cope::log::enable();
   cope::txn::handler_t tx_sell{ sellitem::txn::handler() };
-  auto total_frames{ 0 };
+  using namespace std::chrono;
   auto start = high_resolution_clock::now();
+  auto total_frames{ 0 };
   auto num_iter{ 1 };
   for (int iter{}; iter < num_iter; ++iter) {
     auto frame_count = run(tx_sell);
     total_frames += frame_count;
   }
-  auto end = std::chrono::high_resolution_clock::now();
+  auto end = high_resolution_clock::now();
   auto elapsed = 1e-6 * (double)duration_cast<nanoseconds>(end - start).count();
   std::cerr << "Elapsed: " << std::fixed << elapsed << std::setprecision(9)
     << "ms, (" << num_iter << " iters, " << total_frames << " frames)"

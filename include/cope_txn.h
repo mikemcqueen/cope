@@ -261,8 +261,6 @@ namespace cope::txn {
       // copy/move initial state into coroutine frame
       // NOTE: state move/copy MUST happen BEFORE emplace_in()
       // why exactly?
-      // TODO: std::move into a reference, does this actually move?
-      // try with non-copyable type.
       state_ = std::move(*txn_start.state_ptr.get());
       // move msg_ptr from incoming txn to promise().in()
       promise().emplace_in(std::move(txn_start.msg_ptr));
