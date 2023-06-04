@@ -18,25 +18,7 @@ namespace cope::txn {
     running,
     complete
   };
-}
-    
-template <>
-struct std::formatter<cope::txn::state, char> {
-  constexpr auto parse(std::format_parse_context& ctx) {
-    return ctx.begin();
-  }
-  auto format(cope::txn::state& st, std::format_context& ctx) {
-    using cope::txn::state;
-    static std::unordered_map<state, std::string> state_name_map = {
-      { state::ready, "ready" },
-      { state::running, "running" },
-      { state::complete, "complete" }
-    };
-    return std::format_to(ctx.out(), "{}", state_name_map[st]);
-  }
-};
 
-namespace cope::txn {
   struct data_t : msg::data_t {
     data_t(std::string_view msg_name, std::string_view txn_name) :
       msg::data_t(msg_name), txn_name(txn_name) {}
@@ -113,7 +95,7 @@ namespace cope::txn {
       void return_void() { throw std::runtime_error("co_return not allowed"); }
       // TODO: return private awaitable w/o txn name?
       basic_awaitable yield_value(msg_ptr_t msg_ptr) {
-        log::info("Yielding {} from {}...", msg_ptr.get()->msg_name,
+        log::info("yielding {} from {}...", msg_ptr.get()->msg_name,
           txn_name());
         root_handle_.promise().emplace_out(std::move(msg_ptr));
         return {};
@@ -144,7 +126,7 @@ namespace cope::txn {
       auto result() const { return result_; }
       result_t set_result(result_code rc) { result_.set(rc); return result_;  }
 
-      state txn_state() const { return txn_state_; }
+      auto txn_state() const { return txn_state_; }
       bool txn_ready() const { return txn_state_ == state::ready; }
       bool txn_running() const { return txn_state_ == state::running; }
       void set_txn_state(state txn_state) {
@@ -190,12 +172,12 @@ namespace cope::txn {
       validate_send_msg(*msg_ptr.get());
       auto& active_p = active_handle().promise();
       active_p.emplace_in(std::move(msg_ptr));
-      log::info("Sending {} to {}", active_p.in().msg_name,
+      log::info("sending {} to {}", active_p.in().msg_name,
         active_p.txn_name());
       active_handle().resume();
       // active_handle() may have changed at this point
       auto& root_p = root_handle().promise();
-      log::info("Received {} from {}", root_p.out_ptr() ?
+      log::info("received {} from {}", root_p.out_ptr() ?
         root_p.out().msg_name : "nothing",
         active_handle().promise().txn_name());
       return std::move(root_p.out_ptr());
@@ -250,7 +232,7 @@ namespace cope::txn {
           return dst_handle; // symmetric transfer to dst (prev) handle
         }
         else if (promise().in_ptr()) {
-          // txn complete, no prev handle; root txn returning to send_msg()
+          // txn complete, no prev handle; root txn will return to send_msg()
           // move promise.in to root_promise.out
           auto& root_promise = promise().root_handle().promise();
           root_promise.emplace_out(std::move(promise().in_ptr()));
@@ -272,8 +254,7 @@ namespace cope::txn {
       // validate this is a start_txn message for the txn we are expecting.
       promise().set_result(start_t::validate(txn, txn_name_));
       if (promise().result().failed()) {
-        log::info("ERROR: resuming {}, ({})", txn_name_,
-          promise().result());
+        log::info("ERROR resuming {}, ({})", txn_name_, promise().result());
         return promise();
       }
       auto& txn_start = dynamic_cast<start_t&>(txn);
@@ -330,7 +311,7 @@ namespace cope::txn {
     }
 
     auto& await_resume() {
-      log::info("Resuming {}...", promise().txn_name());
+      log::info("resuming {}...", promise().txn_name());
       return promise();
     }
 
@@ -347,5 +328,18 @@ namespace cope::txn {
     promise.set_txn_state(state::complete);
   }
 } // namespace cope::txn
+
+template <>
+struct std::formatter<cope::txn::state> : std::formatter<std::string> {
+  auto format(cope::txn::state st, std::format_context& ctx) const {
+    using cope::txn::state;
+    static std::unordered_map<state, std::string> state_name_map = {
+      { state::ready, "ready" },
+      { state::running, "running" },
+      { state::complete, "complete" }
+    };
+    return std::format_to(ctx.out(), "{}", state_name_map[st]);
+  }
+};
 
 #endif // INCLUDE_COPE_TXN_H

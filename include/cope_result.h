@@ -38,7 +38,7 @@ namespace cope {
 
 template <>
 struct std::formatter<cope::result_t> : std::formatter<std::string> {
-  auto format(cope::result_t result, format_context& ctx) {
+  auto format(cope::result_t result, format_context& ctx) const {
     using cope::result_code;
     static std::unordered_map<cope::result_code, std::string> rc_map = {
       { result_code::s_ok, "s_ok" },
@@ -51,14 +51,6 @@ struct std::formatter<cope::result_t> : std::formatter<std::string> {
       { result_code::e_unexpected_txn_name, "e_unexpected_txn_name" }
     };
     return std::format_to(ctx.out(), "{}", rc_map[result.code]);
-/*
-    if (rc_map.contains(rc)) {
-      return std::formatter<string>::format(
-        std::format("{}", rc_map[rc]));
-    }
-    else {
-    }
-  */
   }
 };
 

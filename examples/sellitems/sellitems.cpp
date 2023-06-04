@@ -185,7 +185,7 @@ int main() {
   cope::txn::handler_t tx_sell{ sellitem::txn::handler() };
   auto total_frames{ 0 };
   auto start = high_resolution_clock::now();
-  auto num_iter{ 1 }; // 0'000};
+  auto num_iter{ 1 };
   for (int iter{}; iter < num_iter; ++iter) {
     auto frame_count = run(tx_sell);
     total_frames += frame_count;

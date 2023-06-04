@@ -1,5 +1,11 @@
 * make the sellitems sample more pretty. (?)
-* add compiler options
+* add compiler options (linux especially?)
 * support command line -q, -i<iter>
 * remove all references to "Broker::*"
-* WSL build
+* another example. moving average (temperature?) calc + temp control?
+  could have different temp control strategies, slow, medium, fast response
+  however, this doesn't really solve the "nested state" problem
+* "query" message.  queries state?
+* "update" message.  updates state?
+  * both of these could potentially do all of their work from within
+    the promise, if the txn is in "ready" state
