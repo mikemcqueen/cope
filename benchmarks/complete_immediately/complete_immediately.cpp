@@ -10,7 +10,7 @@ auto new_empty_msg(std::string_view name) {
 }
 
 namespace complete_immediately {
-  constexpr std::string_view kTxnName = "tx_complete_immediately";
+  constexpr std::string_view kTxnName = "txn::complete_immediately";
 
   namespace txn {
     using state_t = int;
@@ -33,33 +33,56 @@ namespace complete_immediately {
         cope::txn::complete(promise);
       }
     }
-  }
-}
+  } // namespace txn
 
-double iters_per_ms(int iters, double ms) {
-  return (double)iters / ms;
-}
+  // this is with no re-use of msg & state data
+  auto run_no_reuse(cope::txn::handler_t& handler, int num_iter) {
+    using namespace std::chrono;
+    auto start = high_resolution_clock::now();
+    for (int iter{}; iter < num_iter; ++iter) {
+      auto in_ptr = new_empty_msg("msg::in");
+      in_ptr = std::move(txn::make_start_txn(std::move(in_ptr), iter));
+      cope::msg_ptr_t out_ptr = handler.send_msg(std::move(in_ptr));
+    }
+    auto end = high_resolution_clock::now();
+    return 1e-6 * (double)duration_cast<nanoseconds>(end - start).count();
+  }
+
+  // this is with re-use of msg & state data
+  auto run_with_reuse(cope::txn::handler_t& handler, int num_iter) {
+    using namespace std::chrono;
+    auto start = high_resolution_clock::now();
+    auto start_txn = txn::make_start_txn(new_empty_msg("msg::in"), 0);
+    for (int iter{}; iter < num_iter; ++iter) {
+      auto out_ptr = std::move(handler.send_msg(std::move(start_txn)));
+      //start_txn->msg_ptr = std::move(out_ptr);
+    }
+    auto end = high_resolution_clock::now();
+    return 1e-6 * (double)duration_cast<nanoseconds>(end - start).count();
+  }
+
+  double iters_per_ms(int iters, double ms) {
+    return (double)iters / ms;
+  }
+
+  void log_result(std::string_view name, int iters, double ms) {
+    std::cerr << name << ", elapsed: " << std::fixed << std::setprecision(5)
+      << ms << "ms, (" << iters << " iters"
+      << ", " << iters_per_ms(iters, ms) << " iters/ms)"
+      << std::endl;
+  }
+} // namespace complete_immediately
 
 int main() {
-  cope::txn::handler_t handler{ complete_immediately::txn::handler() };
-
-  using namespace std::chrono;
-  auto start = high_resolution_clock::now();
-  // this is with no re-use of msg & state data
+  using namespace complete_immediately;
+  cope::txn::handler_t handler{ txn::handler() };
   int num_iter{ 1'000'000 };
-  for (int iter{}; iter < num_iter; ++iter) {
-    auto in_ptr = new_empty_msg("msg::in");
-//    if (!handler.promise().txn_running()) {
-    in_ptr = std::move(complete_immediately::txn::make_start_txn(
-      std::move(in_ptr), iter));
-//    }
-    cope::msg_ptr_t out_ptr = handler.send_msg(std::move(in_ptr));
-  }
-  auto end = high_resolution_clock::now();
-  auto elapsed =
-    1e-6 * (double)duration_cast<nanoseconds>(end - start).count();
-  std::cerr << "Elapsed: " << std::fixed << std::setprecision(5)
-    << elapsed << "ms, (" << num_iter << " iters"
-    << ", " << iters_per_ms(num_iter, elapsed) << " iters/ms)"
-    << std::endl;
+
+  auto elapsed = run_no_reuse(handler, num_iter);
+  log_result("no_reuse", num_iter, elapsed);
+
+/* TODO
+  elapsed = run_with_reuse(handler, num_iter);
+  log_result("with_reuse", num_iter, elapsed);
+*/
 }

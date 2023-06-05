@@ -1,8 +1,8 @@
 * benchmarks:
   * execute a txn, return immediately
-  * execute a txn, eat N messages, return
+  * execute a txn, yield N times, return
   * execute a txn, which executes txn that returns immediately
-  * execute a txn, process N messages which each executes txn that return immediately
+  * execute a txn, whhich executses txn n times that return immediately
 
   * with/without std::any
   * with/without std::unique_ptr (including state)
