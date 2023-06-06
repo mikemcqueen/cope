@@ -1,3 +1,5 @@
+* templatize IdT in both msg and txn
+
 * benchmarks:
   * execute a txn, return immediately
   * execute a txn, yield N times, return

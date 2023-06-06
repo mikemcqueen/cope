@@ -13,12 +13,65 @@
 #include "internal/cope_log.h"
 
 namespace cope::txn {
+  enum class id_t : int32_t {};
+
+  namespace id {
+    constexpr id_t kUndefined = static_cast<id_t>(-2);
+  }
+
   enum class state : int {
     ready = 0,
     running,
     complete
   };
 
+  /*
+  struct data_t {
+    data_t(txn::id_t txn_id, msg_t&& msg) noexcept :
+      txn_id(txn_id), msg(std::move(msg)) {}
+
+    id_t txn_id{ id::kUndefined };
+    msg_t msg;
+  };
+  */
+
+  template<typename stateT>
+  struct start_t { // : data_t {
+    static auto validate(const msg_t& msg, id_t txn_id) {
+      if (!is_start_txn(msg)) {
+        return result_code::e_unexpected_msg_name;
+      }
+      const auto txn = std::any_cast<start_t<stateT>>(&msg.payload);
+      if (!txn) {
+        return result_code::e_unexpected_msg_type;
+      }
+      if (txn->txn_id != txn_id) {
+        return result_code::e_unexpected_txn_name; // TODO
+      }
+      return result_code::s_ok;
+    }
+
+/*
+    constexpr start_t(id_t txn_id, msg_t&& msg, stateT&& state) noexcept :
+      data_t(txn_id, std::move(msg)),
+      state(std::move(state))
+    {}
+*/
+
+    id_t txn_id{ id::kUndefined };
+    msg_t msg{};
+    stateT state{};
+  };
+
+  template<typename stateT>
+  auto make_start_txn(id_t txn_id, msg_t&& msg, stateT&& state) {
+    auto payload = std::make_any<start_t<stateT>>(txn_id, std::move(msg),
+      std::forward<stateT>(state));
+//    std::any x = payload;
+    return msg::data_t(msg::id::kTxnStart, std::move(payload));
+  }
+
+#ifdef COPE_MSG_NAME
   struct data_t : msg::data_t {
     data_t(std::string_view msg_name, std::string_view txn_name) :
       msg::data_t(msg_name), txn_name(txn_name) {}
@@ -64,6 +117,7 @@ namespace cope::txn {
     msg_ptr_t msg_ptr;
     state_ptr_t state_ptr;
   };
+#endif // COPE_MSG_NAME
 
   class handler_t final {
   public:
@@ -89,15 +143,16 @@ namespace cope::txn {
       std::suspend_always final_suspend() noexcept { return {}; }
       void unhandled_exception() {
         log::info("*** unhandled_exception() in {}",
-          active_handle_.promise().txn_name());
+          (int)active_handle_.promise().txn_id());
         throw;
       }
       void return_void() { throw std::runtime_error("co_return not allowed"); }
       // TODO: return private awaitable w/o txn name?
-      basic_awaitable yield_value(msg_ptr_t msg_ptr) {
-        log::info("yielding {} from {}...", msg_ptr.get()->msg_name,
-          txn_name());
-        root_handle_.promise().emplace_out(std::move(msg_ptr));
+      basic_awaitable yield_value(msg_t&& msg) {
+        log::info("yielding msg_id:{} from txn_id:{}...",
+          (int)msg.msg_id, (int)txn_id());
+        root_handle_.promise().emplace_out(std::move(msg));
+        msg.payload.reset();
         return {};
       }
 
@@ -111,16 +166,16 @@ namespace cope::txn {
       void set_prev_handle(handle_t h) { prev_handle_.emplace(h); }
 
       // const auto&?
-      auto& in() const { return *in_ptr_.get(); }
-      void emplace_in(msg_ptr_t in_ptr) { in_ptr_ = std::move(in_ptr); }
-      [[nodiscard]] msg_ptr_t&& in_ptr() { return std::move(in_ptr_); }
+      auto& in() { return in_; }
+      void emplace_in(msg_t&& in) { in_ = std::move(in); in.payload.reset();  }
+//      [[nodiscard]] msg_ptr_t&& in_ptr() { return std::move(in_ptr_); }
 
-      auto& out() const { return *out_ptr_.get(); }
-      void emplace_out(msg_ptr_t out_ptr) { out_ptr_ = std::move(out_ptr); }
-      [[nodiscard]] msg_ptr_t&& out_ptr() { return std::move(out_ptr_); }
+      auto& out() { return out_; }
+      void emplace_out(msg_t&& out) { out_ = std::move(out); out.payload.reset(); }
+//      [[nodiscard]] msg_ptr_t&& out_ptr() { return std::move(out_ptr_); }
 
-      const std::string& txn_name() const { return txn_name_; }
-      void set_txn_name(std::string_view txn_name) { txn_name_ = txn_name; }
+      id_t txn_id() const { return txn_id_; }
+      void set_txn_id(id_t txn_id) { txn_id_ = txn_id; }
 
       operator result_t&() { return result_; }
       auto result() const { return result_; }
@@ -131,17 +186,17 @@ namespace cope::txn {
       bool txn_running() const { return txn_state_ == state::running; }
       void set_txn_state(state txn_state) {
         txn_state_ = txn_state;
-        log::info("{}:set_txn_state({})", txn_name_, txn_state_);
+        log::info("txn_id:{}:set_txn_state({})", (int)txn_id_, txn_state_);
       }
 
     private:
       handle_t root_handle_;
       handle_t active_handle_;
       std::optional<handle_t> prev_handle_;
-      msg_ptr_t in_ptr_;
-      msg_ptr_t out_ptr_;
-      std::string txn_name_;
+      id_t txn_id_;
       state txn_state_ = state::ready;
+      msg_t in_;
+      msg_t out_;
       result_t result_;
     }; // struct promise_type
 
@@ -168,25 +223,26 @@ namespace cope::txn {
     auto& promise() const { return coro_handle_.promise(); }
 
     // TODO: this logic should be in an awaitable?
-    [[nodiscard]] msg_ptr_t&& send_msg(msg_ptr_t msg_ptr) {
-      validate_send_msg(*msg_ptr.get());
+    /*[[nodiscard]]*/ msg_t send_msg(msg_t&& msg) {
+      validate_send_msg(msg);
       auto& active_p = active_handle().promise();
-      active_p.emplace_in(std::move(msg_ptr));
-      log::info("sending {} to {}", active_p.in().msg_name,
-        active_p.txn_name());
+      active_p.emplace_in(std::move(msg));
+      log::info("sending msg_id:{} to txn_id:{}", (int)active_p.in().msg_id,
+        (int)active_p.txn_id());
       active_handle().resume();
       // active_handle() may have changed at this point
       auto& root_p = root_handle().promise();
-      log::info("received {} from {}", root_p.out_ptr() ?
-        root_p.out().msg_name : "nothing",
-        active_handle().promise().txn_name());
-      return std::move(root_p.out_ptr());
+      log::info("received msg_id:{} from txn_id:{}", (int)root_p.out().msg_id,
+        (int)active_handle().promise().txn_id());
+      auto out = std::move(root_p.out());
+      root_p.out().payload.reset();
+      return out;
     }
 
   private:
     handle_t active_handle() const { return promise().active_handle(); }
     handle_t root_handle() const { return promise().root_handle(); }
-    auto& txn_name() const { return promise().txn_name(); }
+    auto txn_id() const { return promise().txn_id(); }
 
     void validate_send_msg(const msg_t& msg) const {
       if (msg::is_start_txn(msg)) {
@@ -202,17 +258,17 @@ namespace cope::txn {
   }; // class handler_t
 
   template<typename stateT>
-  struct receive_awaitable : handler_t::basic_awaitable {
-    receive_awaitable(std::string_view txn_name, stateT& state) :
-      txn_name_(txn_name), state_(state) {}
+  struct receive : handler_t::basic_awaitable {
+    receive(id_t txn_id, stateT& state) :
+      txn_id_(txn_id), state_(state) {}
 
     std::coroutine_handle<> await_suspend(handler_t::handle_t h) {
       handler_t::basic_awaitable::await_suspend(h);
       if (promise().txn_running()) {
-        throw std::logic_error(std::format("txn::receive_awaitable({}) cannot "
-          "be used with txn in 'running' state", promise().txn_name()));
+        throw std::logic_error(std::format("txn::receive(txn_id:{}) cannot be"
+          "used with txn in 'running' state", (int)promise().txn_id()));
       }
-      promise().set_txn_name(txn_name_);
+      promise().set_txn_id(txn_id_);
       if (promise().txn_state() == state::complete) {
         promise().set_txn_state(state::ready);
         if (promise().prev_handle().has_value()) {
@@ -220,9 +276,9 @@ namespace cope::txn {
           handler_t::handle_t dst_handle = promise().prev_handle().value();
           auto& dst_promise = dst_handle.promise();
           // move promise.in to dst_promise.in
-          dst_promise.emplace_in(std::move(promise().in_ptr()));
-          log::info("  returning a {} to {}", dst_promise.in().msg_name,
-            dst_promise.txn_name());
+          dst_promise.emplace_in(std::move(promise().in()));
+          log::info("  returning a msg_id:{} to txn_id:{}",
+            (int)dst_promise.in().msg_id, (int)dst_promise.txn_id());
           auto& root_promise = promise().root_handle().promise();
           root_promise.set_active_handle(dst_handle);
           // reset all handles of this completed coro to itself
@@ -231,76 +287,72 @@ namespace cope::txn {
           promise().prev_handle().reset();
           return dst_handle; // symmetric transfer to dst (prev) handle
         }
-        else if (promise().in_ptr()) {
+        else /*if (promise().in_ptr()) */ {
           // txn complete, no prev handle; root txn will return to send_msg()
           // move promise.in to root_promise.out
+          // TODO: why move in -> out, we never use this?
           auto& root_promise = promise().root_handle().promise();
-          root_promise.emplace_out(std::move(promise().in_ptr()));
-          log::info("  returning a {} to send_msg()",
-            root_promise.out().msg_name);
+          root_promise.emplace_out(std::move(promise().in()));
+          log::info("  returning a msg_id:{} to send_msg()",
+            (int)root_promise.out().msg_id);
         }
+/*
         else {
           // txn complete, no prev handle, no "in" value; not possible
           throw std::runtime_error("impossible state");
         }
+*/
       }
-      log::info("  {} - returning noop_coroutine", promise().txn_name());
+      log::info("  txn_id:{} - returning noop_coroutine",
+        (int)promise().txn_id());
       return std::noop_coroutine();
     }
 
     handler_t::promise_type& await_resume() {
       using start_t = start_t<stateT>;
-      auto& txn = promise().in();
+      auto& msg = promise().in();
       // validate this is a start_txn message for the txn we are expecting.
-      promise().set_result(start_t::validate(txn, txn_name_));
+      promise().set_result(start_t::validate(msg, txn_id_));
       if (promise().result().failed()) {
-        log::info("ERROR resuming {}, ({})", txn_name_, promise().result());
+        log::info("ERROR resuming txn_id:{}, ({})", (int)txn_id_,
+          promise().result());
         return promise();
       }
-      auto& txn_start = dynamic_cast<start_t&>(txn);
+      auto txn_start = std::any_cast<start_t>(&msg.payload);
+      if (!txn_start) throw std::bad_any_cast();
       // copy/move initial state into coroutine frame
-      // NOTE: state move/copy MUST happen BEFORE emplace_in()
-      // why exactly?
-      state_ = std::move(*txn_start.state_ptr.get());
-      // move msg_ptr from incoming txn to promise().in()
-      promise().emplace_in(std::move(txn_start.msg_ptr));
+      state_ = std::move(txn_start->state);
+      // move msg contained in txn payload to promise().in()
+      promise().emplace_in(std::move(txn_start->msg));
+//      msg.payload.reset();
       promise().set_txn_state(state::running);
       return promise();
     }
 
   private:
-    std::string txn_name_;
+    id_t txn_id_;
     stateT& state_;
-  }; // struct receive_awaitable
+  }; // struct receive
 
   template<typename stateT>
-  auto make_start_txn(std::string_view txn_name, msg_ptr_t msg_ptr,
-    typename start_t<stateT>::state_ptr_t state_ptr)
-  {
-    return std::make_unique<start_t<stateT>>(txn_name, std::move(msg_ptr),
-      std::move(state_ptr));
-  }
-
-  template<typename stateT>
-  struct start_awaitable : handler_t::basic_awaitable {
+  struct start : handler_t::basic_awaitable {
     using handle_t = handler_t::handle_t;
-    using state_ptr_t = start_t<stateT>::state_ptr_t;
 
-    start_awaitable(handle_t dst_handle, msg_ptr_t msg_ptr,
-        state_ptr_t state_ptr) :
-      dst_handle_(dst_handle), msg_ptr_(std::move(msg_ptr)),
-      state_ptr_(std::move(state_ptr))
+    constexpr start(handle_t dst_handle, msg_t&& msg, stateT&& state)
+        noexcept :
+      dst_handle_(dst_handle), msg_(std::move(msg)),
+      state_(std::move(state))
     {}
 
     auto await_suspend(handle_t h) {
       handler_t::basic_awaitable::await_suspend(h);
-      log::info("start_txn_awaitable: Suspending {}...",
-        promise().txn_name());
+      log::info("start_txn_awaitable: Suspending txn_id:{}...",
+        (int)promise().txn_id());
       auto& dst_promise = dst_handle_.promise();
-      dst_promise.emplace_in(make_start_txn<stateT>(dst_promise.txn_name(),
-        std::move(msg_ptr_), std::move(state_ptr_)));
-      log::info("  sending a {} to {}", dst_promise.in().msg_name,
-        dst_promise.txn_name());
+      dst_promise.emplace_in(make_start_txn<stateT>(dst_promise.txn_id(),
+        std::move(msg_), std::move(state_)));
+      log::info("  sending a msg_id:{} to txn_id:{}", (int)dst_promise.in().msg_id,
+        (int)dst_promise.txn_id());
       dst_promise.set_root_handle(promise().root_handle());
       dst_promise.set_prev_handle(promise().active_handle());
       auto& root_promise = promise().root_handle().promise();
@@ -309,19 +361,20 @@ namespace cope::txn {
     }
 
     auto& await_resume() {
-      log::info("resuming {}...", promise().txn_name());
+      log::info("resuming txn_id:{}...", (int)promise().txn_id());
       return promise();
     }
 
   private:
     handle_t dst_handle_;
-    msg_ptr_t msg_ptr_;
-    state_ptr_t state_ptr_;
+    msg_t msg_;
+    stateT state_;
   }; // struct start_awaitable
 
   inline void complete(handler_t::promise_type& promise) {
     if (!promise.txn_running()) {
-      throw std::logic_error("txn::complete(): txn is not in running state");
+      throw std::logic_error(std::format("txn::complete(): txn txn_id:{} is"
+        "not in running state", (int)promise.txn_id()));
     }
     promise.set_txn_state(state::complete);
   }
