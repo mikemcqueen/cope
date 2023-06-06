@@ -5,30 +5,33 @@
 #include <string_view>
 #include "cope.h"
 
+/*
 auto new_empty_msg(std::string_view name) {
   return std::make_unique<cope::msg_t>(name);
 }
+*/
 
 namespace complete_immediately {
-  constexpr std::string_view kTxnName = "txn::complete_immediately";
+  constexpr auto kTxnId = static_cast<cope::txn::id_t>(100);
 
   namespace txn {
     using state_t = int;
     using start_t = cope::txn::start_t<state_t>;
 
     inline auto make_start_txn(cope::msg_ptr_t msg_ptr, int value) {
-      auto state{ std::make_unique<txn::state_t>(value) };
-      return cope::txn::make_start_txn<txn::state_t>(kTxnName,
-        std::move(msg_ptr), std::move(state));
+      //auto state{ std::make_unique<txn::state_t>(value) };
+      return cope::txn::make_start_txn<txn::state_t>(kTxnId,
+        std::move(msg_ptr), std::make_unique<txn::state_t>(value));
     }
 
     auto handler() -> cope::txn::handler_t {
       state_t state;
 
       while (true) {
-        auto& promise = co_await cope::txn::receive_awaitable{ kTxnName, state };
+        auto& promise = co_await cope::txn::receive_awaitable{ kTxnId, state };
         if (state < 0) {
-          co_yield new_empty_msg("msg::out");
+          cope::log::info("yielding!");
+          co_yield cope::msg::make_noop();
         }
         cope::txn::complete(promise);
       }
@@ -40,14 +43,14 @@ namespace complete_immediately {
     using namespace std::chrono;
     auto start = high_resolution_clock::now();
     for (int iter{}; iter < num_iter; ++iter) {
-      auto in_ptr = new_empty_msg("msg::in");
-      in_ptr = std::move(txn::make_start_txn(std::move(in_ptr), iter));
+      auto in_ptr = txn::make_start_txn(cope::msg::make_noop(), iter);
       cope::msg_ptr_t out_ptr = handler.send_msg(std::move(in_ptr));
     }
     auto end = high_resolution_clock::now();
-    return 1e-6 * (double)duration_cast<nanoseconds>(end - start).count();
+    return (double)duration_cast<nanoseconds>(end - start).count();
   }
 
+/*
   // this is with re-use of msg & state data
   auto run_with_reuse(cope::txn::handler_t& handler, int num_iter) {
     using namespace std::chrono;
@@ -60,23 +63,30 @@ namespace complete_immediately {
     auto end = high_resolution_clock::now();
     return 1e-6 * (double)duration_cast<nanoseconds>(end - start).count();
   }
+*/  
 
-  double iters_per_ms(int iters, double ms) {
-    return (double)iters / ms;
+  double iters_per_ms(int iters, double ns) {
+    return (double)iters / (ns * 1e-6);
   }
 
-  void log_result(std::string_view name, int iters, double ms) {
+  double ns_per_iter(int iters, double ns) {
+    return ns / (double)iters;
+  }
+
+  void log_result(std::string_view name, int iters, double ns) {
     std::cerr << name << ", elapsed: " << std::fixed << std::setprecision(5)
-      << ms << "ms, (" << iters << " iters"
-      << ", " << iters_per_ms(iters, ms) << " iters/ms)"
+      << ns * 1e-6 << "ms, (" << iters << " iters"
+      << ", " << iters_per_ms(iters, ns) << " iters/ms"
+      << ", " << ns_per_iter(iters, ns) << " ns/iter)"
       << std::endl;
   }
 } // namespace complete_immediately
 
 int main() {
   using namespace complete_immediately;
+  //cope::log::enable();
   cope::txn::handler_t handler{ txn::handler() };
-  int num_iter{ 1'000'000 };
+  int num_iter{ 50'000'000 };
 
   auto elapsed = run_no_reuse(handler, num_iter);
   log_result("no_reuse", num_iter, elapsed);
