@@ -7,46 +7,73 @@
 #include "cope_msg.h"
 
 namespace cope {
-  namespace msg {
-    // msg stored as T*. beware lifetime issues.
+  namespace proxy {
+    // TODO: what if i want msg.members to be moved?
+    //   maybe it just works. test it with state that deletes
+    //   copy constructor.
     template<typename T>
-    //  requires requires (T x) { x.msg_id; }
-    struct proxy_t {
-      using msg_type = T;
+    struct raw_ptr_t {
+      using type = T;
 
-      proxy_t() = default;
-      proxy_t(const T& msg) : msg_(&msg) {}
-      proxy_t(T&& msg) = delete;
+      raw_ptr_t() = default;
+      // beware lifetime issues.
+      raw_ptr_t(const T& msg) : msg_(&msg) {}
+      raw_ptr_t(T&& msg) = delete;
 
       const auto& get() const { return *msg_; }
+      // ugly, yes. but this is the magic that makes it all work.
       auto& get() { return const_cast<T&>(*msg_); }
 
-      decltype(auto) get_moveable() const { return (*msg_); }//std::move(*msg_); }
+      auto& get_moveable() const { return *msg_; }
       void emplace(const T& msg) { msg_ = &msg; }
 
     private:
       const T* msg_;
     };
 
-    // msg stored as msg_ptr_t
+    template<typename T>
+    struct unique_ptr_t {
+      using type = T;
+      using ptr_type = std::unique_ptr<T>;
+
+      unique_ptr_t() = default;
+      unique_ptr_t(const ptr_type& ptr) = delete;
+      unique_ptr_t(ptr_type&& ptr) : ptr_(std::move(ptr)) {}
+
+      // const auto& get() const {}?
+      auto& get() { return *ptr_.get(); }
+      [[nodiscard]] auto&& get_moveable() { return std::move(ptr_); }
+      void emplace(ptr_type&& ptr) { ptr_ = std::move(ptr); }
+
+    private:
+      ptr_type ptr_;
+    };
+  } // namespace proxy
+
+  namespace msg {
+    // TODO: move to cope_msg.h, include cope_proxy.h
+    template<typename T>
+    //  requires requires (T x) { x.msg_id; }
+    struct proxy_t : cope::proxy::raw_ptr_t<T> {
+      using base_t = cope::proxy::raw_ptr_t<T>;
+
+      proxy_t() = default;
+      proxy_t(const T& msg) : base_t(msg) {}
+      proxy_t(T&& msg) = delete;
+    };
+
     template<>
-    struct proxy_t<msg_ptr_t> {
-      using msg_type = msg_ptr_t;
+    struct proxy_t<msg_ptr_t> : cope::proxy::unique_ptr_t<msg_t> {
+      using base_t = cope::proxy::unique_ptr_t<msg_t>;
 
       proxy_t() = default;
       proxy_t(const msg_ptr_t& msg_ptr) = delete;
-      proxy_t(msg_ptr_t&& msg_ptr) : msg_ptr_(std::move(msg_ptr)) {}
-
-      // const auto& get() const {}
-      auto& get() { return *msg_ptr_.get(); }
-      [[nodiscard]] auto&& get_moveable() { return std::move(msg_ptr_); }
-      void emplace(msg_ptr_t&& msg_ptr) { msg_ptr_ = std::move(msg_ptr); }
-
-    private:
-      msg_type msg_ptr_;
+      proxy_t(msg_ptr_t&& msg_ptr) : base_t(std::move(msg_ptr)) {}
     };
   } // namespace msg
 
+  // TODO: this whole thing probably not necessary if we add msg_proxyT
+  //   as members in promise_type instead of inheriting
   namespace io {
     template<typename msg_proxyT>
       requires requires (msg_proxyT& p) {
@@ -54,27 +81,14 @@ namespace cope {
       }
     struct proxy_t {
       auto& in() { return in_.get(); }
-      [[nodiscard]] //auto&&
-      decltype(auto) moveable_in() { return in_.get_moveable(); }
-//      void emplace_in(msg_proxyT& msg_proxy) { in_.emplace(msg_proxy.get_moveable()); }
-      template<typename T>
-      void emplace_in(/*typename msg_proxyT::msg_type*/T&& msg) {
+      [[nodiscard]] decltype(auto) moveable_in() { return in_.get_moveable(); }
+      template<typename T> void emplace_in(T&& msg) {
         in_.emplace(std::forward<T>(msg));
       }
-/*
-template<>
-      void emplace_in(msg_proxyT&& msg_proxy) {
-        in_.emplace(std::forward<msg_proxyT>(msg_proxy).get_moveable());
-      }
-*/
+
       auto& out() { return out_.get(); }
-      [[nodiscard]] //auto&&
-      decltype(auto) moveable_out() { return out_.get_moveable(); }
-/*
-      void emplace_out(msg_proxyT& from) { out_.emplace(from.get_moveable()); }
-*/
-      template<typename T>
-      void emplace_out(/*typename msg_proxyT::msg_type*/T&& msg) {
+      [[nodiscard]] decltype(auto) moveable_out() { return out_.get_moveable(); }
+      template<typename T> void emplace_out(T&& msg) {
         out_.emplace(std::forward<T>(msg));
       }
 
@@ -83,6 +97,6 @@ template<>
       msg_proxyT out_;
     };
   } // namespace io
-} // namespace cope::proxy
+} // namespace cope
 
 #endif // INCLUDE_COPE_PROXY_H
