@@ -4,6 +4,7 @@
 #include <iostream>
 #include <string_view>
 #include "cope.h"
+#include "cope_proxy.h"
 
 /*
 auto new_empty_msg(std::string_view name) {
@@ -12,47 +13,111 @@ auto new_empty_msg(std::string_view name) {
 */
 
 namespace complete_immediately {
-  constexpr auto kTxnId = static_cast<cope::txn::id_t>(100);
+  constexpr auto kTxnId{ static_cast<cope::txn::id_t>(100) };
 
   namespace txn {
-    using state_t = int;
-    using start_t = cope::txn::start_t<state_t>;
+    namespace uptr { // unique_ptr<> based messages
+      using txn_base_t = cope::msg_t;
+      using msg_data_t = cope::msg_ptr_t;
+      using msg_proxy_t = cope::msg::proxy_t<msg_data_t>;
+      using state_t = int;
+      using start_t = cope::txn::start_t<txn_base_t, msg_proxy_t, state_t>;
+      using handler_t = cope::txn::handler_t<msg_proxy_t>;
+      using receive = cope::txn::receive<txn_base_t, msg_proxy_t, state_t>;
 
-    inline auto make_start_txn(cope::msg_ptr_t msg_ptr, int value) {
-      //auto state{ std::make_unique<txn::state_t>(value) };
-      return cope::txn::make_start_txn<txn::state_t>(kTxnId,
-        std::move(msg_ptr), std::make_unique<txn::state_t>(value));
-    }
-
-    auto handler() -> cope::txn::handler_t {
-      state_t state;
-
-      while (true) {
-        auto& promise = co_await cope::txn::receive_awaitable{ kTxnId, state };
-        if (state < 0) {
-          cope::log::info("yielding!");
-          co_yield cope::msg::make_noop();
-        }
-        cope::txn::complete(promise);
+      inline auto make_start_txn(cope::msg_ptr_t msg_ptr, int value) {
+        //auto state{ std::make_unique<txn::state_t>(value) };
+        return std::make_unique<start_t>(kTxnId, msg_proxy_t{ std::move(msg_ptr) },
+          std::make_unique<state_t>(value));
       }
-    }
-  } // namespace txn
 
-  // this is with no re-use of msg & state data
-  auto run_no_reuse(cope::txn::handler_t& handler, int num_iter) {
-    using namespace std::chrono;
-    auto start = high_resolution_clock::now();
-    for (int iter{}; iter < num_iter; ++iter) {
-      auto in_ptr = txn::make_start_txn(cope::msg::make_noop(), iter);
-      cope::msg_ptr_t out_ptr = handler.send_msg(std::move(in_ptr));
-    }
-    auto end = high_resolution_clock::now();
-    return (double)duration_cast<nanoseconds>(end - start).count();
-  }
+      auto handler() -> handler_t {
+        state_t state;
+
+        while (true) {
+          auto& promise = co_await receive{ kTxnId, state };
+          if (state < 0) {
+            cope::log::info("yielding!");
+            co_yield cope::msg::make_noop();
+          }
+          cope::txn::complete<msg_proxy_t>(promise);
+        }
+      }
+
+      auto run_no_reuse(handler_t& handler, int num_iter) {
+        using namespace std::chrono;
+        auto start = high_resolution_clock::now();
+        for (int iter{}; iter < num_iter; ++iter) {
+          auto txn = make_start_txn(cope::msg::make_noop(), iter);
+          auto proxy = msg_proxy_t{ std::move(txn) };
+          cope::msg_ptr_t out_ptr = handler.send_msg(proxy);
+        }
+        auto end = high_resolution_clock::now();
+        return (double)duration_cast<nanoseconds>(end - start).count();
+      }
+    } // namespace uptr
+
+    namespace scalar { // int messages
+      // todo: maybe this could be teh base of txn::msg::data_t; msg::base_t ?
+      struct msg_t {
+        template<typename T> const T& as() const {
+          return static_cast<const T&>(*this);
+        }
+        template<typename T> T& as() { return static_cast<T&>(*this); }
+
+        cope::msg::id_t msg_id;
+      };
+      //using msg_data_t = int;
+      using msg_proxy_t = cope::msg::proxy_t<msg_t>;
+      using state_t = int;
+      using start_t = cope::txn::start_t<msg_t, msg_proxy_t, state_t>;
+      using start_proxy_t = cope::msg::proxy_t<start_t>; //cope::txn::start_t<msg_t, msg_proxy_t, state_t>;
+      using handler_t = cope::txn::handler_t<msg_proxy_t>;
+      using receive = cope::txn::receive<msg_t, msg_proxy_t, state_t>;
+
+      /*
+      inline auto make_start_txn(cope::msg_ptr_t msg_ptr, int value) {
+        //auto state{ std::make_unique<txn::state_t>(value) };
+        return std::make_unique<start_t>(kTxnId, msg_proxy_t{ std::move(msg_ptr) },
+          std::make_unique<state_t>(value));
+      }
+      */
+
+      auto handler() -> handler_t {
+        state_t state;
+
+        while (true) {
+          auto& promise = co_await receive{ kTxnId, state };
+          if (state < 0) {
+            cope::log::info("yielding!");
+            co_yield msg_t{ cope::msg::id::kNoOp };
+          }
+          cope::txn::complete<msg_proxy_t>(promise);
+        }
+      }
+
+      auto run_no_reuse(handler_t& handler, int num_iter) {
+        using namespace std::chrono;
+        auto start = high_resolution_clock::now();
+        // TODO: once state is no longer unique_ptr
+        //auto txn = start_t{ kTxnId, msg_proxy_t{1}, 0 };
+        for (int iter{}; iter < num_iter; ++iter) {
+          auto msg_id = static_cast<cope::msg::id_t>(iter);
+          auto txn = start_t{ kTxnId, msg_t{ msg_id },
+            std::make_unique<state_t>(iter) };
+          auto proxy = start_proxy_t{ std::move(txn) };
+          auto r = handler.send_msg(proxy);
+          if (r.msg_id != msg_id) r.msg_id = cope::msg::id::kNoOp;
+        }
+        auto end = high_resolution_clock::now();
+        return (double)duration_cast<nanoseconds>(end - start).count();
+      }
+    } // namespace scalar
+  } // namespace txn
 
 /*
   // this is with re-use of msg & state data
-  auto run_with_reuse(cope::txn::handler_t& handler, int num_iter) {
+  auto run_with_reuse(txn::handler_t& handler, int num_iter) {
     using namespace std::chrono;
     auto start = high_resolution_clock::now();
     auto start_txn = txn::make_start_txn(new_empty_msg("msg::in"), 0);
@@ -85,11 +150,15 @@ namespace complete_immediately {
 int main() {
   using namespace complete_immediately;
   //cope::log::enable();
-  cope::txn::handler_t handler{ txn::handler() };
-  int num_iter{ 50'000'000 };
+  int num_iter{ 10'000'000 };
 
-  auto elapsed = run_no_reuse(handler, num_iter);
-  log_result("no_reuse", num_iter, elapsed);
+  txn::uptr::handler_t uptr_handler{ txn::uptr::handler() };
+  auto elapsed = txn::uptr::run_no_reuse(uptr_handler, num_iter);
+  log_result("uptr no_reuse", num_iter, elapsed);
+
+  txn::scalar::handler_t scalar_handler{ txn::scalar::handler() };
+  elapsed = txn::scalar::run_no_reuse(scalar_handler, num_iter);
+  log_result("scalar no_reuse", num_iter, elapsed);
 
 /* TODO
   elapsed = run_with_reuse(handler, num_iter);

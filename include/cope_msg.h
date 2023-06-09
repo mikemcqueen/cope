@@ -75,7 +75,9 @@ namespace cope {
       return rc;
     }
 
-    constexpr auto is_start_txn(const msg_t& msg) {
+    template<typename msgT> 
+      requires requires (const msgT& msg) { msg.msg_id; }
+    constexpr auto is_start_txn(const msgT& msg) {
       return msg.msg_id == id::kTxnStart;
     }
   } // namespace msg
