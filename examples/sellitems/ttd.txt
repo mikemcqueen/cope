@@ -1,3 +1,27 @@
+* we could have a user-defined type, in_out_holder:
+
+struct in_out {
+ 
+  auto& in() { return in; } 
+  auto& out()  { return out; }
+  void emplace_in(in&& in) { in = std::move(in); }
+  void emplace_out(out&& out) { out = std::move(out); }
+
+private:
+  some_type in_{};
+  some_type out_{};
+}
+
+then:
+
+template<typename T>
+struct handler_t {
+  struct promise_type : T {
+  };
+};
+
+* look into how emplace_back() is implemented in std::vector, etc
+
 * rvalue ref in send_msg
 
 * benchmarks:

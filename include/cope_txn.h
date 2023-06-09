@@ -44,11 +44,10 @@ namespace cope::txn {
       return std::move(*txn_start.state.get());
     }
 
-    static auto validate(const msg_t& msg, id_t /*txn_id*/) {
+    static auto validate(const msg_t& msg, id_t txn_id) {
       if (!is_start_txn(msg)) {
         return result_code::e_unexpected_msg_name;
       }
-      /*
       const auto* txn = dynamic_cast<const start_t<stateT>*>(&msg);
       if (!txn) {
         return result_code::e_unexpected_msg_type;
@@ -56,12 +55,11 @@ namespace cope::txn {
       if (txn->txn_id != txn_id) {
         return result_code::e_unexpected_txn_name;
       }
-      */
       return result_code::s_ok;
     }
 
     constexpr start_t(id_t txn_id, msg_ptr_t msg_ptr,
-        state_ptr_t state_ptr) :
+        state_ptr_t state_ptr) noexcept :
       data_t(msg::id::kTxnStart, txn_id),
       msg_ptr(std::move(msg_ptr)), state_ptr(std::move(state_ptr)) {}
 
@@ -94,6 +92,7 @@ namespace cope::txn {
       void unhandled_exception() {
         log::info("*** unhandled_exception() in txn_id:{}",
           (int)active_handle_.promise().txn_id());
+        // TODO: store for retrieval? force suspend? something?
         throw;
       }
       void return_void() { throw std::runtime_error("co_return not allowed"); }
@@ -128,7 +127,7 @@ namespace cope::txn {
 
       operator result_t&() { return result_; }
       auto result() const { return result_; }
-      result_t set_result(result_code rc) { result_.set(rc); return result_;  }
+      auto set_result(result_code rc) { result_.set(rc); return result_;  }
 
       auto txn_state() const { return txn_state_; }
       bool txn_ready() const { return txn_state_ == state::ready; }
