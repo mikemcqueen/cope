@@ -67,7 +67,7 @@ namespace cope::txn {
     }
 
     constexpr start_t(id_t txn_id, msg_proxyT&& msg,
-        state_ptr_t state_ptr) noexcept :
+        state_ptr_t&& state_ptr) noexcept :
       data_t<baseT>(msg::id::kTxnStart, txn_id),
       msg_proxyT(std::move(msg)),
       state_ptr(std::move(state_ptr)) {}
@@ -103,7 +103,8 @@ namespace cope::txn {
       void unhandled_exception() {
         log::info("*** unhandled_exception() in txn_id:{}",
           (int)active_handle_.promise().txn_id());
-        // TODO: store for retrieval? force suspend? something?
+        // TODO: store for retrieval? store what? force suspend? set error?
+        // something?
         throw;
       }
       void return_void() { throw std::runtime_error("co_return not allowed"); }
@@ -112,8 +113,8 @@ namespace cope::txn {
       template<typename msgT>
       // should be proxy_t<msgT> or just msg_proxyT
       basic_awaitable yield_value(msgT msg) {
-        log::info("yielding msg_id:{notgeneric-fixit} from txn_id:{}...", /*(int)msg.msg_id,*/
-          (int)txn_id());
+        log::info("yielding msg_id:not-generic-fixit from txn_id:{}...",
+          /*(int)msg.msg_id,*/ (int)txn_id());
         root_handle_.promise().emplace_out(std::move(msg));
         return {};
       }
@@ -190,7 +191,8 @@ namespace cope::txn {
 
     /*[[nodiscard]]*/
     template<typename sendmsg_proxyT>
-    [[nodiscard]] msg_type&& send_msg(sendmsg_proxyT& msg_proxy) {
+    [[nodiscard]] /*msg_type&&*/
+    decltype(auto) send_msg(sendmsg_proxyT& msg_proxy) {
       validate_send_msg(msg_proxy.get());
       auto& active_p = active_handle().promise();
       active_p.emplace_in(std::move(msg_proxy.get_moveable()));
@@ -204,7 +206,7 @@ namespace cope::txn {
         (int)root_p.out().msg_id : 0,
         (int)active_handle().promise().txn_id());
       */
-      return std::move(root_p.moveable_out());
+      return root_p.moveable_out();
     }
 
   private:
@@ -216,7 +218,8 @@ namespace cope::txn {
     void validate_send_msg(const msgT& msg) const {
       if (msg::is_start_txn(msg)) {
         if (handle().promise().txn_running()) {
-          throw std::logic_error("send_msg(): txn already running");
+          throw std::logic_error(std::format("send_msg(): txn already running"
+            " ({})", (int)msg.msg_id));
         }
       } else if (!handle().promise().txn_running()) {
         throw std::logic_error("send_msg(): txn not running");
@@ -296,7 +299,7 @@ namespace cope::txn {
       // move initial state into coroutine frame
       state_ = std::move(*txn_start.state_ptr.get());
       // move msg_ptr from incoming txn to this->promise().in()
-      this->promise().emplace_in(std::move(txn_start.get_moveable()));
+      this->promise().emplace_in(txn_start.get_moveable());
       this->promise().set_txn_state(state::running);
       return this->promise();
     }

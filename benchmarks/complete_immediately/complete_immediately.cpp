@@ -1,6 +1,7 @@
 // complete_immediately.cpp
 
 #include <chrono>
+#include <exception>
 #include <iostream>
 #include <string_view>
 #include "cope.h"
@@ -60,7 +61,7 @@ namespace complete_immediately {
     namespace scalar { // int messages
       // todo: maybe this could be teh base of txn::msg::data_t; msg::base_t ?
       struct msg_t {
-        template<typename T> const T& as() const {
+        template<typename T> T& as() const {
           return static_cast<const T&>(*this);
         }
         template<typename T> T& as() { return static_cast<T&>(*this); }
@@ -88,8 +89,9 @@ namespace complete_immediately {
 
         while (true) {
           auto& promise = co_await receive{ kTxnId, state };
+          cope::log::info("  state: {}", state);
           if (state < 0) {
-            cope::log::info("yielding!");
+            cope::log::info("  yielding!");
             co_yield msg_t{ cope::msg::id::kNoOp };
           }
           cope::txn::complete<msg_proxy_t>(promise);
@@ -103,9 +105,10 @@ namespace complete_immediately {
         //auto txn = start_t{ kTxnId, msg_proxy_t{1}, 0 };
         for (int iter{}; iter < num_iter; ++iter) {
           auto msg_id = static_cast<cope::msg::id_t>(iter);
-          auto txn = start_t{ kTxnId, msg_t{ msg_id },
-            std::make_unique<state_t>(iter) };
-          auto proxy = start_proxy_t{ std::move(txn) };
+          // both msg and txn **must** be lvalues to avoid dangling pointers
+          msg_t msg{ cope::msg::id::kNoOp }; 
+          auto txn = start_t{ kTxnId, msg, std::make_unique<state_t>(iter) };
+          auto proxy = start_proxy_t{ txn };
           auto r = handler.send_msg(proxy);
           if (r.msg_id != msg_id) r.msg_id = cope::msg::id::kNoOp;
         }
@@ -150,15 +153,20 @@ namespace complete_immediately {
 int main() {
   using namespace complete_immediately;
   //cope::log::enable();
-  int num_iter{ 10'000'000 };
+  int num_iter{ 50'000'000};
 
-  txn::uptr::handler_t uptr_handler{ txn::uptr::handler() };
-  auto elapsed = txn::uptr::run_no_reuse(uptr_handler, num_iter);
-  log_result("uptr no_reuse", num_iter, elapsed);
+  try {
+    txn::uptr::handler_t uptr_handler{ txn::uptr::handler() };
+    auto elapsed = txn::uptr::run_no_reuse(uptr_handler, num_iter);
+    log_result("uptr no_reuse", num_iter, elapsed);
 
-  txn::scalar::handler_t scalar_handler{ txn::scalar::handler() };
-  elapsed = txn::scalar::run_no_reuse(scalar_handler, num_iter);
-  log_result("scalar no_reuse", num_iter, elapsed);
+    txn::scalar::handler_t scalar_handler{ txn::scalar::handler() };
+    elapsed = txn::scalar::run_no_reuse(scalar_handler, num_iter);
+    log_result("scalar no_reuse", num_iter, elapsed);
+  }
+  catch (std::exception& e) {
+    std::cout << "exception: " << e.what() << std::endl;
+  }
 
 /* TODO
   elapsed = run_with_reuse(handler, num_iter);

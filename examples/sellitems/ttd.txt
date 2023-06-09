@@ -1,28 +1,6 @@
-* we could have a user-defined type, in_out_holder:
+* so I think io::proxy::emplace_in is taking a "msg_t&&" and when I send
+  it a txn (e.g. start_t&&) it slices. can I templatize it?
 
-struct in_out {
- 
-  auto& in() { return in; } 
-  auto& out()  { return out; }
-  void emplace_in(in&& in) { in = std::move(in); }
-  void emplace_out(out&& out) { out = std::move(out); }
-
-private:
-  some_type in_{};
-  some_type out_{};
-}
-
-then:
-
-template<typename T>
-struct handler_t {
-  struct promise_type : T {
-  };
-};
-
-* look into how emplace_back() is implemented in std::vector, etc
-
-* rvalue ref in send_msg
 
 * benchmarks:
   * execute a txn, return immediately
