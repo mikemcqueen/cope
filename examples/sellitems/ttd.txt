@@ -1,6 +1,6 @@
-* so I think io::proxy::emplace_in is taking a "msg_t&&" and when I send
-  it a txn (e.g. start_t&&) it slices. can I templatize it?
-
+* make sellitem example compile
+* make validation work. 
+* see _storage_type in <format>, maybe alternative to proxy_t (maybe shouuld be storage_t)
 
 * benchmarks:
   * execute a txn, return immediately
@@ -22,7 +22,7 @@
 * remove all references to "Broker::*"
 * another example. moving average (temperature?) calc + temp control?
   could have different temp control strategies, slow, medium, fast response
-  however, this doesn't really solve the "nested state" problem
+  however, this doesn't really highlight the "nested state" problem
 * "query" message.  queries state?
 * "update" message.  updates state?
   * both of these could potentially do all of their work from within

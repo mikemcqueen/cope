@@ -6,11 +6,15 @@
 #include <string_view>
 
 namespace ui::msg {
-  namespace name {
-    constexpr std::string_view click_widget{ "ui::msg::click_widget" };
-    constexpr std::string_view click_point{ "ui::msg::click_point" };
-    constexpr std::string_view click_table_row{ "ui::msg::click_table_row" };
-    constexpr std::string_view send_chars{ "ui::msg::send_chars" };
+  namespace id {
+    constexpr auto kFirst{          cope::msg::make_id(1000) };
+
+    constexpr auto kClickWidget{    kFirst };
+    constexpr auto kClickPoint{     cope::msg::make_id(1001) };
+    constexpr auto kClickTableRow{  cope::msg::make_id(1002) };
+    constexpr auto kSendChars{      cope::msg::make_id(1003) }; 
+
+    constexpr auto kLast{           cope::msg::make_id(1099) };
   }
 } // namespace ui::msg
 

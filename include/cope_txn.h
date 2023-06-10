@@ -16,22 +16,24 @@
 namespace cope::txn {
   enum class id_t : int32_t {};
 
+  inline constexpr auto make_id(int id) { return static_cast<id_t>(id); }
+
   enum class state : int {
     ready = 0,
     running,
     complete
   };
 
-  template<typename baseT>
-  struct data_t : baseT {
+  template<typename msg_baseT>
+  struct data_t : msg_baseT {
     data_t(msg::id_t msg_id, txn::id_t txn_id) :
-      baseT(msg_id), txn_id(txn_id) {}
+      msg_baseT(msg_id), txn_id(txn_id) {}
 
     id_t txn_id;
   };
 
-  template<typename baseT, typename msg_proxyT, typename state_proxyT>
-  struct start_t : data_t<baseT>, msg_proxyT {
+  template<typename txn_baseT, typename msg_proxyT, typename state_proxyT>
+  struct start_t : data_t<txn_baseT> {
     //  using state_ptr_t = std::unique_ptr<stateT>;
  
     /*
@@ -51,9 +53,9 @@ namespace cope::txn {
     */
 
     // TODO: template<...> ?
-    static auto validate(const baseT& msg, id_t /*txn_id*/) {
-      if (!msg::is_start_txn<baseT>(msg)) {
-        return result_code::e_unexpected_msg_name;
+    static auto validate(const txn_baseT& msg, id_t /*txn_id*/) {
+      if (!msg::is_start_txn<txn_baseT>(msg)) {
+        return result_code::e_unexpected_msg_id;
       }
       /*
       const auto* txn = dynamic_cast<const start_t<stateT>*>(&msg);
@@ -61,19 +63,20 @@ namespace cope::txn {
         return result_code::e_unexpected_msg_type;
       }
       if (txn->txn_id != txn_id) {
-        return result_code::e_unexpected_txn_name;
+        return result_code::e_unexpected_txn_id;
       }
       */
       return result_code::s_ok;
     }
 
-    constexpr start_t(id_t txn_id, msg_proxyT&& msg,
-        state_proxyT&& state) noexcept :
-      data_t<baseT>(msg::id::kTxnStart, txn_id),
-      msg_proxyT(std::move(msg)),
-      state(std::move(state)) {}
+    constexpr start_t(id_t txn_id, msg_proxyT&& msg_proxy,
+        state_proxyT&& state_proxy) noexcept :
+      data_t<txn_baseT>(msg::id::kTxnStart, txn_id),
+      msg_proxy(std::move(msg_proxy)),
+      state_proxy(std::move(state_proxy)) {}
 
-    state_proxyT state;
+    msg_proxyT msg_proxy;
+    state_proxyT state_proxy;
   };
 
   template<typename msg_proxyT>
@@ -81,7 +84,6 @@ namespace cope::txn {
   public:
     struct promise_type;
     using handle_t = std::coroutine_handle<promise_type>;
-    using io_proxy_t = io::proxy_t<msg_proxyT>;
     using msg_type = typename msg_proxyT::type;
 
     struct basic_awaitable {
@@ -97,7 +99,7 @@ namespace cope::txn {
     }; // struct basic_awaitable
 
     struct initial_awaitable;
-    struct promise_type : io_proxy_t {
+    struct promise_type {//: io_proxy_t {
       auto get_return_object() noexcept { return handler_t{ this }; }
       initial_awaitable initial_suspend() noexcept { return {}; }
       std::suspend_always final_suspend() noexcept { return {}; }
@@ -113,10 +115,10 @@ namespace cope::txn {
       // TODO: r-value reference?
       template<typename msgT>
       // TODO: should be proxy_t<msgT> or just msg_proxyT
-      basic_awaitable yield_value(msgT msg) {
+      basic_awaitable yield_value(msgT&& msg) {
         log::info("yielding msg_id:not-generic-fixit from txn_id:{}...",
           /*(int)msg.msg_id,*/ (int)txn_id());
-        root_handle_.promise().emplace_out(std::move(msg));
+        root_handle_.promise().out().emplace(std::move(msg));
         return {};
       }
 
@@ -132,9 +134,9 @@ namespace cope::txn {
       id_t txn_id() const { return txn_id_; }
       void set_txn_id(id_t txn_id) { txn_id_ = txn_id; }
 
-      operator result_t&() { return result_; }
+      operator result_t& () { return result_; }
       auto result() const { return result_; }
-      auto set_result(result_code rc) { result_.set(rc); return result_;  }
+      auto set_result(result_code rc) { result_.set(rc); return result_; }
 
       auto txn_state() const { return txn_state_; }
       bool txn_ready() const { return txn_state_ == state::ready; }
@@ -144,6 +146,11 @@ namespace cope::txn {
         log::info("txn_id:{}:set_txn_state({})", (int)txn_id_, txn_state_);
       }
 
+      const auto& in() const { return in_; }
+      auto& in() { return in_; }
+      const auto& out() const { return out_; }
+      auto& out() { return out_; }
+
     private:
       handle_t root_handle_;
       handle_t active_handle_;
@@ -151,6 +158,8 @@ namespace cope::txn {
       id_t txn_id_;
       state txn_state_ = state::ready;
       result_t result_;
+      msg_proxyT in_;
+      msg_proxyT out_;
     }; // struct promise_type
 
     // TODO: private?
@@ -174,14 +183,14 @@ namespace cope::txn {
     auto handle() const { return coro_handle_; }
     auto& promise() const { return coro_handle_.promise(); }
 
-    template<typename sendmsg_proxyT>
+    template<typename msg_proxyT>
     [[nodiscard]]
-    decltype(auto) send_msg(sendmsg_proxyT& msg_proxy) {
+    decltype(auto) send_msg(msg_proxyT& msg_proxy) {
       validate_send_msg(msg_proxy.get());
       auto& active_p = active_handle().promise();
-      active_p.emplace_in(msg_proxy.get_moveable());
-      log::info("sending msg_id:{} to txn_id:{}", (int)active_p.in().msg_id,
-        (int)active_p.txn_id());
+      active_p.in().emplace(msg_proxy.get_moveable());
+      log::info("sending msg_id:{} to txn_id:{}",
+        (int)active_p.in().get().msg_id, (int)active_p.txn_id());
       active_handle().resume();
       // active_handle() may have changed at this point
       auto& root_p = root_handle().promise();
@@ -190,7 +199,7 @@ namespace cope::txn {
         (int)root_p.out().msg_id : 0,
         (int)active_handle().promise().txn_id());
       */
-      return root_p.moveable_out();
+      return root_p.out().get_moveable();
     }
 
   private:
@@ -213,12 +222,13 @@ namespace cope::txn {
     handle_t coro_handle_;
   }; // class handler_t
 
+  // receive
   template<typename txn_baseT, typename msg_proxyT, typename state_proxyT>
-  struct receive : handler_t<msg_proxyT>::basic_awaitable {
+  struct receive_awaitable : handler_t<msg_proxyT>::basic_awaitable {
     using handler_t = txn::handler_t<msg_proxyT>;
     using state_t = typename state_proxyT::type;
 
-    receive(id_t txn_id, state_t& state) :
+    receive_awaitable(id_t txn_id, state_t& state) :
       txn_id_(txn_id), state_(state) {}
 
     std::coroutine_handle<> await_suspend(handler_t::handle_t h) {
@@ -235,13 +245,9 @@ namespace cope::txn {
           typename handler_t::handle_t dst_handle = this->promise().prev_handle().value();
           auto& dst_promise = dst_handle.promise();
           // move promise.in to dst_promise.in
-          // TODO: msg_proxyT in_, out_; added to promise_type, with:
-          //   auto& in() { return in_; } auto& out() { return out_; }
-          //   then: this->promise().in().get_moveable();
-          //   how does this impact other usage of promise.(io_proxy_t function)
-          dst_promise.emplace_in(this->promise().moveable_in());
+          dst_promise.in().emplace(this->promise().in().get_moveable());
           log::info("  returning a msg_id:{} to txn_id:{}",
-            (int)dst_promise.in().msg_id, (int)dst_promise.txn_id());
+            (int)dst_promise.in().get().msg_id, (int)dst_promise.txn_id());
           auto& root_promise = this->promise().root_handle().promise();
           root_promise.set_active_handle(dst_handle);
           // reset all handles of this completed coro to itself
@@ -254,9 +260,9 @@ namespace cope::txn {
           // txn complete, no prev handle; root txn will return to send_msg()
           // move promise.in to root_promise.out
           auto& root_promise = this->promise().root_handle().promise();
-          root_promise.emplace_out(this->promise().moveable_in());
+          root_promise.out().emplace(this->promise().in().get_moveable());
           log::info("  returning a msg_id:{} to send_msg()",
-            (int)root_promise.out().msg_id);
+            (int)root_promise.out().get().msg_id);
         }
         /*
         else {
@@ -272,7 +278,7 @@ namespace cope::txn {
 
     handler_t::promise_type& await_resume() {
       using start_t = start_t<txn_baseT, msg_proxyT, state_proxyT>;
-      auto& txn = this->promise().in();
+      auto& txn = this->promise().in().get();
       // validate this is a start_txn message for the expected txn_id
       this->promise().set_result(start_t::validate(txn, txn_id_));
       if (this->promise().result().failed()) {
@@ -283,9 +289,9 @@ namespace cope::txn {
       }
       auto& txn_start = txn.template as<start_t&>();
       // move initial state into coroutine frame
-      state_ = std::move(txn_start.state.get());
-      // move msg_ptr from incoming txn to this->promise().in()
-      this->promise().emplace_in(txn_start.get_moveable());
+      state_ = std::move(txn_start.state_proxy.get());
+      // move msg from incoming txn to this->promise().in()
+      this->promise().in().emplace(txn_start.msg_proxy.get_moveable());
       this->promise().set_txn_state(state::running);
       return this->promise();
     }
@@ -293,29 +299,31 @@ namespace cope::txn {
   private:
     id_t txn_id_;
     state_t& state_;
-  }; // struct receive
+  }; // struct receive_awaitable
 
-  /*
-  // maybe belongs elsewhere. maybe.
-    template<typename stateT>
-    auto make_start_txn(id_t txn_id, msg_ptr_t msg_ptr,
-      typename start_t<stateT>::state_ptr_t state_ptr)
-    {
-      return std::make_unique<start_t<stateT>>(txn_id, std::move(msg_ptr),
-        std::move(state_ptr));
-    }
-  */
+  // maybe belongs elsewhere. maybe belongs here. maybe nowhere.
+  // needs more template arguments and some thinkin.
+  template<typename msg_proxyT, typename state_proxyT>
+  auto make_start_txn(id_t txn_id, msg_proxyT&& msg_proxy,
+    state_proxyT&& state_proxy)
+  {
+    using start_t = start_t<msg_proxyT, state_proxyT>;
+    return std::make_unique<start_t>(txn_id, std::move(msg_proxy),
+      std::move(state_proxy));
+  }
 
-  template<typename txn_baseT, typename msg_proxyT, typename stateT>
-  struct start : handler_t<msg_proxyT>::basic_awaitable {
+  // start
+  // TODO!
+  template<typename txn_baseT, typename msg_proxyT, typename state_proxyT>
+  struct start_awaitable : handler_t<msg_proxyT>::basic_awaitable {
     using base_t = handler_t<msg_proxyT>;
     using handle_t = base_t::handle_t;
-    using state_ptr_t = start_t<txn_baseT, msg_proxyT, stateT>::state_ptr_t;
+    //using state_ptr_t = start_t<txn_baseT, msg_proxyT, stateT>::state_ptr_t;
 
-    start(handle_t dst_handle, msg_ptr_t msg_ptr,
-        state_ptr_t state_ptr) :
-      dst_handle_(dst_handle), msg_ptr_(std::move(msg_ptr)),
-      state_ptr_(std::move(state_ptr))
+    start_awaitable(handle_t dst_handle, msg_proxyT msg_proxy,
+        state_proxyT state_proxy) :
+      dst_handle_(dst_handle), msg_proxy_(std::move(msg_proxy)),
+      state_proxy_(std::move(state_proxy))
     {}
 
     auto await_suspend(handle_t h) {
@@ -323,8 +331,8 @@ namespace cope::txn {
       log::info("start_txn_awaitable: suspending txn_id:{}...",
         (int)this->promise().txn_id());
       auto& dst_promise = dst_handle_.promise();
-      dst_promise.emplace_in(make_start_txn<stateT>(dst_promise.txn_id(),
-        std::move(msg_ptr_), std::move(state_ptr_)));
+      dst_promise.in().emplace(make_start_txn(dst_promise.txn_id(),
+        msg_proxy_.get_moveable(), state_proxy_.get_moveable()));
       log::info("  sending a msg_id:{} to txn_id:{}",
         (int)dst_promise.in().msg_id, (int)dst_promise.txn_id());
       dst_promise.set_root_handle(this->promise().root_handle());
@@ -341,9 +349,9 @@ namespace cope::txn {
 
   private:
     handle_t dst_handle_;
-    msg_ptr_t msg_ptr_;
-    state_ptr_t state_ptr_;
-  }; // struct start
+    msg_proxyT msg_proxy_;
+    state_proxyT state_proxy_;
+  }; // struct start_awaitable
 
   template<typename msg_proxyT>
   inline void complete(typename handler_t<msg_proxyT>::promise_type& promise) {

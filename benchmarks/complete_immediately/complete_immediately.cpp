@@ -12,17 +12,16 @@ namespace complete_immediately {
 
   namespace txn {
     namespace uptr { // unique_ptr<> based messages
-      using txn_base_t = cope::msg_t;
-      using msg_data_t = cope::msg_ptr_t;
-      using msg_proxy_t = cope::msg::proxy_t<msg_data_t>;
+      using msg_t = cope::msg_t;
+      using msg_proxy_t = cope::msg::proxy_t<cope::msg_ptr_t>;
       using state_t = int;
       // TODO: or, proxy::scalar_t?
-      using state_proxy_t = cope::proxy::raw_ptr_t<int>;
-      using start_t = cope::txn::start_t<txn_base_t, msg_proxy_t, state_proxy_t>;
+      using state_proxy_t = cope::proxy::raw_ptr_t<state_t>;
+      using start_t = cope::txn::start_t<msg_t, msg_proxy_t, state_proxy_t>;
       using handler_t = cope::txn::handler_t<msg_proxy_t>;
-      using receive = cope::txn::receive<txn_base_t, msg_proxy_t, state_proxy_t>;
+      using receive = cope::txn::receive_awaitable<msg_t, msg_proxy_t, state_proxy_t>;
 
-      inline auto make_start_txn(cope::msg_ptr_t msg_ptr, int value) {
+      inline auto make_start_txn(cope::msg_ptr_t msg_ptr, state_t value) {
         return std::make_unique<start_t>(kTxnId,
           msg_proxy_t{ std::move(msg_ptr) },
           state_proxy_t{ value });
@@ -54,7 +53,7 @@ namespace complete_immediately {
       }
     } // namespace uptr
 
-    namespace scalar { // int messages
+    namespace scalar { // int messages & state
       struct msg_t {
         template<typename T> T& as() { return static_cast<T&>(*this); }
 
@@ -63,11 +62,11 @@ namespace complete_immediately {
       using msg_proxy_t = cope::msg::proxy_t<msg_t>;
       using state_t = int;
       // TODO: or, proxy::scalar_t?
-      using state_proxy_t = cope::proxy::raw_ptr_t<int>;
+      using state_proxy_t = cope::proxy::raw_ptr_t<state_t>;
       using start_t = cope::txn::start_t<msg_t, msg_proxy_t, state_proxy_t>;
       using start_proxy_t = cope::msg::proxy_t<start_t>;
       using handler_t = cope::txn::handler_t<msg_proxy_t>;
-      using receive = cope::txn::receive<msg_t, msg_proxy_t, state_proxy_t>;
+      using receive = cope::txn::receive_awaitable<msg_t, msg_proxy_t, state_proxy_t>;
 
       auto handler() -> handler_t {
         state_t state;
@@ -86,15 +85,14 @@ namespace complete_immediately {
       auto run_no_reuse(handler_t& handler, int num_iter) {
         using namespace std::chrono;
         auto start = high_resolution_clock::now();
-        // TODO: once state is no longer unique_ptr
         msg_t msg{ cope::msg::id::kNoOp };
-        //auto txn = start_t{ kTxnId, msg, ??0?? };
+        // TODO: once state is no longer unique_ptr
         for (int iter{}; iter < num_iter; ++iter) {
           // both msg and txn **must** be lvalues to avoid dangling pointers
           // (or have the whole nested expression in send_msg())
           auto txn = start_t{ kTxnId, msg, state_proxy_t{iter} };
           auto proxy = start_proxy_t{ txn };
-          [[maybe_unused]] auto r = handler.send_msg(proxy);
+          [[maybe_unused]] const auto& r = handler.send_msg(proxy);
         }
         auto end = high_resolution_clock::now();
         return (double)duration_cast<nanoseconds>(end - start).count();

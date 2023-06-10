@@ -14,9 +14,9 @@ namespace cope {
     e_abort = 4,
     e_fail = 5,
     e_unexpected = 0xffff,
-    e_unexpected_msg_name,
+    e_unexpected_msg_id,
     e_unexpected_msg_type,
-    e_unexpected_txn_name
+    e_unexpected_txn_id
   };
 
   inline auto succeeded(result_code rc) { return rc <= result_code::s_false; }
@@ -46,9 +46,9 @@ struct std::formatter<cope::result_t> : std::formatter<std::string> {
       { result_code::e_abort, "e_abort" },
       { result_code::e_fail, "e_fail" },
       { result_code::e_unexpected, "e_unexpected" },
-      { result_code::e_unexpected_msg_name, "e_unexpected_msg_name" },
+      { result_code::e_unexpected_msg_id, "e_unexpected_msg_id" },
       { result_code::e_unexpected_msg_type, "e_unexpected_msg_type" },
-      { result_code::e_unexpected_txn_name, "e_unexpected_txn_name" }
+      { result_code::e_unexpected_txn_id, "e_unexpected_txn_id" }
     };
     return std::format_to(ctx.out(), "{}", rc_map[result.code]);
   }

@@ -6,8 +6,10 @@
 #include "cope.h"
 
 namespace sellitem {
-  inline constexpr auto kTxnName{ "txn::sell_item" };
-  inline constexpr auto kMsgName{ "msg::sell_item" };
+  constexpr auto kTxnId{ cope::txn::make_id(1) };
+  constexpr auto kMsgId{ cope::msg::make_id(100) };
+
+  using msg_base_t = cope::msg_t;
 
   namespace msg {
     struct row_data_t {
@@ -17,7 +19,7 @@ namespace sellitem {
       bool selected;
     };
 
-    struct data_t : cope::msg::data_t {
+    struct data_t : msg_base_t {
       using row_vector = std::vector<row_data_t>;
 
       static std::optional<int> find_selected_row(const row_vector& rows) {
@@ -28,13 +30,15 @@ namespace sellitem {
       }
 
       data_t(row_vector&& rows) :
-        cope::msg::data_t(kMsgName), rows(std::move(rows)) {}
+        msg_base_t(kMsgId), rows(std::move(rows)) {}
 
       std::vector<row_data_t> rows;
     };
 
-    inline auto validate(const cope::msg_t& msg) {
-      return cope::msg::validate<data_t>(msg, kMsgName);
+    using proxy_t = cope::msg::proxy_t<cope::msg_ptr_t>;
+
+    inline auto validate(const msg_base_t& msg) {
+      return cope::msg::validate(msg, kMsgId);
     }
   } // namespace msg
 
@@ -44,18 +48,21 @@ namespace sellitem {
       int item_price;
     };
 
-    using start_t = cope::txn::start_t<state_t>;
+    using state_proxy_t = cope::proxy::unique_ptr_t<state_t>;
+    using start_t = cope::txn::start_t<msg_base_t, msg::proxy_t, state_proxy_t>;
+    using start_proxy_t = cope::msg::proxy_t<start_t>;
+    using handler_t = cope::txn::handler_t<msg::proxy_t>;
+    using receive = cope::txn::receive<msg_base_t, msg::proxy_t, state_proxy_t>;
 
-    inline auto make_start_txn(cope::msg_ptr_t msg_ptr, const std::string& item_name,
-      int price)
+    inline auto make_start_txn(cope::msg_ptr_t msg_ptr,
+      const std::string& item_name, int price)
     {
       cope::log::info("starting txn::sell_item");
-      auto state{ std::make_unique<txn::state_t>(item_name, price) };
-      return cope::txn::make_start_txn<txn::state_t>(kTxnName,
+      auto state{ std::move(item_name), price };
+      return std::make_unique<state_t>(kTxnId,
         std::move(msg_ptr), std::move(state));
     }
 
-    auto handler() -> cope::txn::handler_t;
+    auto handler() -> handler_t;
   } // namespace txn
-
 } // namespace sellitem
