@@ -184,8 +184,7 @@ namespace cope::txn {
     auto& promise() const { return coro_handle_.promise(); }
 
     template<typename msg_proxyT>
-    [[nodiscard]]
-    decltype(auto) send_msg(msg_proxyT& msg_proxy) {
+    [[nodiscard]] decltype(auto) send_msg(msg_proxyT&& msg_proxy) {
       validate_send_msg(msg_proxy.get());
       auto& active_p = active_handle().promise();
       active_p.in().emplace(msg_proxy.get_moveable());
@@ -303,16 +302,16 @@ namespace cope::txn {
 
   // maybe belongs elsewhere. maybe belongs here. maybe nowhere.
   // needs more template arguments and some thinkin.
-  template<typename msg_proxyT, typename state_proxyT>
+  template<typename msg_baseT, typename msg_proxyT, typename state_proxyT>
   auto make_start_txn(id_t txn_id, msg_proxyT&& msg_proxy,
     state_proxyT&& state_proxy)
   {
-    using start_t = start_t<msg_proxyT, state_proxyT>;
+    using start_t = start_t<msg_baseT, msg_proxyT, state_proxyT>;
     return std::make_unique<start_t>(txn_id, std::move(msg_proxy),
       std::move(state_proxy));
   }
 
-  // start
+  // start_awaitable
   // TODO!
   template<typename txn_baseT, typename msg_proxyT, typename state_proxyT>
   struct start_awaitable : handler_t<msg_proxyT>::basic_awaitable {
@@ -331,10 +330,12 @@ namespace cope::txn {
       log::info("start_txn_awaitable: suspending txn_id:{}...",
         (int)this->promise().txn_id());
       auto& dst_promise = dst_handle_.promise();
-      dst_promise.in().emplace(make_start_txn(dst_promise.txn_id(),
-        msg_proxy_.get_moveable(), state_proxy_.get_moveable()));
+      auto start_txn = make_start_txn<txn_baseT, msg_proxyT, state_proxyT>(
+        dst_promise.txn_id(), std::move(msg_proxy_)/*.get_moveable()*/,
+        std::move(state_proxy_)/*.get_moveable()*/);
+      dst_promise.in().emplace(std::move(start_txn));
       log::info("  sending a msg_id:{} to txn_id:{}",
-        (int)dst_promise.in().msg_id, (int)dst_promise.txn_id());
+        (int)dst_promise.in().get().msg_id, (int)dst_promise.txn_id());
       dst_promise.set_root_handle(this->promise().root_handle());
       dst_promise.set_prev_handle(this->promise().active_handle());
       auto& root_promise = this->promise().root_handle().promise();

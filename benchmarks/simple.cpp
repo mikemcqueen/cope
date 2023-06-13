@@ -1,4 +1,4 @@
-// complete_immediately.cpp
+// simple.cpp
 
 #include <chrono>
 #include <exception>
@@ -7,7 +7,7 @@
 #include "cope.h"
 #include "cope_proxy.h"
 
-namespace complete_immediately {
+namespace simple {
   constexpr auto kTxnId{ static_cast<cope::txn::id_t>(100) };
 
   namespace txn {
@@ -115,10 +115,10 @@ namespace complete_immediately {
       << ", " << ns_per_iter(iters, ns) << " ns/iter)"
       << std::endl;
   }
-} // namespace complete_immediately
+} // namespace simple
 
 int main() {
-  using namespace complete_immediately;
+  using namespace simple;
   //cope::log::enable();
   int num_iter{ 50'000'000};
 

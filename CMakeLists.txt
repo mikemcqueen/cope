@@ -1,6 +1,10 @@
 ﻿cmake_minimum_required (VERSION 3.21)
 
-project ("cope")
+project (cope LANGUAGES CXX)
 
-add_subdirectory ("benchmarks")
-add_subdirectory ("examples")
+set (CMAKE_CXX_STANDARD 20)
+
+add_subdirectory (benchmarks)
+add_subdirectory (examples)
+
+
