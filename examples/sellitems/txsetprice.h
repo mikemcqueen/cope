@@ -9,25 +9,28 @@
 
 namespace setprice {
   constexpr auto kTxnId{ cope::txn::make_id(10) };
-  constexpr auto kMsgId{ cope::msg::make_id(200) };
+//  constexpr auto kMsgId{ cope::msg::make_id(200) };
 
-  using msg_base_t = cope::msg_t;
+//  using msg_base_t = cope::msg_t;
 
   namespace msg {
-    struct data_t : public msg_base_t {
-      data_t(int price) : msg_base_t{ kMsgId }, price(price) {}
+    struct data_t { //: public msg_base_t {
+      data_t(int price) : /*msg_base_t{ kMsgId },*/ price(price) {}
 
       int price;
     };
 
-    using proxy_t = cope::msg::proxy_t<cope::msg_ptr_t>;
+    //using proxy_t = cope::msg::proxy_t<cope::msg_ptr_t>;
 
     inline auto validate(const msg_base_t& msg) {
-      return cope::msg::validate(msg, kMsgId);
+      return cope::result_code::s_ok; // return cope::msg::validate(msg, kMsgId);
     }
   } // namespace msg
 
   namespace txn {
+    using in_msg_types = std::tuple<msg::data_t, sellitem::msg::data_t>;
+    using out_msg_types = std::tuple<ui::msg::click_widget::data_t, ui::msg::send_chars::data_t>;
+
     struct state_t {
       cope::msg::id_t prev_msg_id; // i.e. "who called us"
       int price;

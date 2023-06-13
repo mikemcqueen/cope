@@ -11,7 +11,9 @@ namespace simple {
   constexpr auto kTxnId{ static_cast<cope::txn::id_t>(100) };
 
   namespace txn {
-    namespace uptr { // unique_ptr<> based messages
+#if 0
+    // unique_ptr<> based messages & scalar state
+    namespace uptr {
       using msg_t = cope::msg_t;
       using msg_proxy_t = cope::msg::proxy_t<cope::msg_ptr_t>;
       using state_t = int;
@@ -40,7 +42,7 @@ namespace simple {
         }
       }
 
-      auto run_no_reuse(handler_t& handler, int num_iter) {
+      auto run(handler_t& handler, int num_iter) {
         using namespace std::chrono;
         auto start = high_resolution_clock::now();
         for (int iter{}; iter < num_iter; ++iter) {
@@ -53,10 +55,10 @@ namespace simple {
       }
     } // namespace uptr
 
-    namespace scalar { // int messages & state
-      struct msg_t {
+    // cope::basic_msg_t based messages (non-virtual) & scalar state
+    namespace basic {
+      struct msg_t : cope::basic_msg_t {
         template<typename T> T& as() { return static_cast<T&>(*this); }
-
         cope::msg::id_t msg_id;
       };
       using msg_proxy_t = cope::msg::proxy_t<msg_t>;
@@ -82,7 +84,7 @@ namespace simple {
         }
       }
 
-      auto run_no_reuse(handler_t& handler, int num_iter) {
+      auto run(handler_t& handler, int num_iter) {
         using namespace std::chrono;
         auto start = high_resolution_clock::now();
         msg_t msg{ cope::msg::id::kNoOp };
@@ -97,8 +99,61 @@ namespace simple {
         auto end = high_resolution_clock::now();
         return (double)duration_cast<nanoseconds>(end - start).count();
       }
-    } // namespace scalar
+    } // namespace basic
+#endif
+
+    // std::varian<> messages (non-virtual) & scalar state
+    namespace variant {
+      struct in_msg_t {
+        int value;
+      };
+      struct out_msg_t {
+        int value;
+      };
+
+      using state_t = int;
+      //using start_txn_t = cope::txn::start_t<in_msg_t, state_t>;
+      //using start_proxy_t = cope::msg::proxy_t<start_t>;
+      using in_tuple_t = std::tuple<in_msg_t>;
+      using out_tuple_t = std::tuple<out_msg_t>;
+
+      /*
+      //using msg_proxy_t = cope::msg::proxy_t<msg_t>;
+      // TODO: or, proxy::scalar_t? or, "trivial_t", "aggregrate_t" ?
+      using state_proxy_t = cope::proxy::raw_ptr_t<state_t>;
+      */
+
+      using handler_t = cope::txn::handler_t<in_msg_t, state_t>;
+      using receive_start_txn = cope::txn::receive_awaitable<handler_t, state_t>;
+
+      auto handler() -> handler_t {
+        state_t state;
+
+        while (true) {
+          auto& promise = co_await receive_start_txn{ kTxnId, state };
+          cope::log::info("  started txn with state: {}", state);
+          handler_t::complete_txn(promise);
+        }
+      }
+
+      auto run(handler_t& handler, int num_iter) {
+        using namespace std::chrono;
+        auto start = high_resolution_clock::now();
+        in_msg_t msg{ 1 };
+        // TODO: once state is no longer unique_ptr
+        for (int iter{}; iter < num_iter; ++iter) {
+          // both msg and txn **must** be lvalues to avoid dangling pointers
+          // (or have the whole nested expression in send_msg())
+          auto txn_start = handler_t::start_txn_t{ msg, state_t{iter} };
+          //auto proxy = start_proxy_t{ txn };
+          [[maybe_unused]] const auto& r = handler.send_msg(std::move(txn_start));
+        }
+        auto end = high_resolution_clock::now();
+        return (double)duration_cast<nanoseconds>(end - start).count();
+      }
+    } // namespace variant
   } // namespace txn
+
 
   double iters_per_ms(int iters, double ns) {
     return (double)iters / (ns * 1e-6);
@@ -123,13 +178,20 @@ int main() {
   int num_iter{ 50'000'000};
 
   try {
+    double elapsed;
+#if 0
     txn::uptr::handler_t uptr_handler{ txn::uptr::handler() };
-    auto elapsed = txn::uptr::run_no_reuse(uptr_handler, num_iter);
-    log_result("uptr no_reuse", num_iter, elapsed);
+    elapsed = txn::uptr::run(uptr_handler, num_iter);
+    log_result("dynamic", num_iter, elapsed);
 
-    txn::scalar::handler_t scalar_handler{ txn::scalar::handler() };
-    elapsed = txn::scalar::run_no_reuse(scalar_handler, num_iter);
-    log_result("scalar no_reuse", num_iter, elapsed);
+    txn::basic::handler_t scalar_handler{ txn::basic::handler() };
+    elapsed = txn::basic::run(basic_handler, num_iter);
+    log_result("basic", num_iter, elapsed);
+#endif
+
+    txn::variant::handler_t variant_handler{ txn::variant::handler() };
+    elapsed = txn::variant::run(variant_handler, num_iter);
+    log_result("variant", num_iter, elapsed);
   }
   catch (std::exception& e) {
     std::cout << "exception: " << e.what() << std::endl;
