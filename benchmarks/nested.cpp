@@ -15,7 +15,9 @@ namespace nested {
   constexpr auto kOuterTxnId{ cope::txn::make_id(200) };
   constexpr auto kInnerTxnId{ cope::txn::make_id(201) };
 
-  namespace poly { // polymorphic messages
+#if 0
+  // unique_ptr based messages, scalar state
+  namespace uptr {
     using msg_base_t = cope::msg_t;
     using msg_proxy_t = cope::msg::proxy_t<cope::msg_ptr_t>;
     using handler_t = cope::txn::handler_t<msg_proxy_t>;
@@ -138,7 +140,7 @@ namespace nested {
       auto end = high_resolution_clock::now();
       return (double)duration_cast<nanoseconds>(end - start).count();
     }
-  } // namespace polymorphic
+  } // namespace uptr
 
   namespace basic {
     using msg_base_t = cope::basic_msg_t;
@@ -164,6 +166,7 @@ namespace nested {
         using start_t = cope::txn::start_t<msg_base_t, msg_proxy_t, state_proxy_t>;
         using start_proxy_t = cope::msg::proxy_t<start_t>;
         using receive = cope::txn::receive_awaitable<msg_base_t, msg_proxy_t, state_proxy_t>;
+        using start_awaitable = cope::txn::start_awaitable<msg_base_t, msg_proxy_t, state_proxy_t>;
 
         auto handler() -> handler_t {
           state_t state;
@@ -247,26 +250,144 @@ namespace nested {
       auto end = high_resolution_clock::now();
       return (double)duration_cast<nanoseconds>(end - start).count();
     }
-  } // namespace polymorphic
-
   } // namespace basic
+#endif
 
-  double iters_per_ms(int iters, double ns) {
-    return (double)iters / (ns * 1e-6);
-  }
+  // std::variant<> messages (non-virtual) & scalar state
+  namespace variant {
+    namespace inner {
+      struct in_msg_t {
+        int value;
+      };
+      struct out_msg_t {
+        int value;
+      };
+    } // namespace inner
 
-  double ns_per_iter(int iters, double ns) {
-    return ns / (double)iters;
-  }
+    namespace outer {
+      struct in_msg_t {
+        int value;
+      };
+      struct out_msg_t {
+        int value;
+      };
+    } // namespace outer
 
-  void log_result(std::string_view name, int iters, double ns) {
-    std::cerr << name << ", elapsed: " << std::fixed << std::setprecision(5)
-      << ns * 1e-6 << "ms, (" << iters << " iters"
-      << ", " << iters_per_ms(iters, ns) << " iters/ms"
-      << ", " << ns_per_iter(iters, ns) << " ns/iter)"
-      << std::endl;
-  }
+    namespace inner {
+      using state_t = int;
+      //using start_txn_t = cope::txn::start_t<in_msg_t, state_t>;
+      //using start_proxy_t = cope::msg::proxy_t<start_t>;
+      using in_tuple_t = std::tuple<in_msg_t, outer::in_msg_t>;
+      using out_tuple_t = std::tuple<out_msg_t>;
+
+      /*
+      //using msg_proxy_t = cope::msg::proxy_t<msg_t>;
+      // TODO: or, proxy::scalar_t? or, "trivial_t", "aggregrate_t" ?
+      using state_proxy_t = cope::proxy::raw_ptr_t<state_t>;
+      */
+
+      using start_msg_t = in_msg_t;
+      using handler_t = cope::txn::handler_t<start_msg_t, state_t, in_tuple_t, out_tuple_t>;
+      using receive_start_txn = cope::txn::receive_awaitable<handler_t, state_t>;
+
+      auto handler() -> handler_t {
+        state_t state;
+
+        while (true) {
+          auto& promise = co_await receive_start_txn{ kInnerTxnId, state };
+          while (!promise.result().unexpected()) {
+            co_yield out_msg_t{ 3 };
+            if (std::holds_alternative<outer::in_msg_t>(promise.in())) {
+              break;
+            }
+          }
+          handler_t::complete_txn(promise);
+        }
+      }
+    } // namespace inner;
+
+    namespace outer {
+      /*
+      struct in_msg_t {
+        int value;
+      };
+      struct out_msg_t {
+        int value;
+      };
+      */
+
+      using state_t = int;
+      //using start_txn_t = cope::txn::start_t<in_msg_t, state_t>;
+      //using start_proxy_t = cope::msg::proxy_t<start_t>;
+      using in_tuple_t = std::tuple<in_msg_t, inner::in_msg_t>;
+      using out_tuple_t = std::tuple<out_msg_t, inner::out_msg_t>;
+
+      /*
+      //using msg_proxy_t = cope::msg::proxy_t<msg_t>;
+      // TODO: or, proxy::scalar_t? or, "trivial_t", "aggregrate_t" ?
+      using state_proxy_t = cope::proxy::raw_ptr_t<state_t>;
+      */
+
+      using handler_t = cope::txn::handler_t<in_msg_t, state_t, in_tuple_t, out_tuple_t>;
+      using receive_start_txn = cope::txn::receive_awaitable<handler_t, state_t>;
+      using start_inner_awaitable = cope::txn::start_awaitable<handler_t, inner::handler_t, state_t>;
+
+      inline auto start_inner(const inner::handler_t& handler, inner::start_msg_t&& msg) {
+        auto inner_state = inner::state_t{ 1 };
+        return start_inner_awaitable{ handler.handle(), std::move(msg), inner_state };
+      }
+
+      auto handler() -> handler_t {
+        auto inner_handler{ inner::handler() };
+        state_t state;
+
+        while (true) {
+          auto& promise = co_await receive_start_txn{ kOuterTxnId, state };
+          while (!promise.result().unexpected()) {
+            co_yield out_msg_t{ 2 };
+            if (std::holds_alternative<inner::start_msg_t>(promise.in())) {
+              co_await start_inner(inner_handler, std::move(
+                std::get<inner::start_msg_t>(promise.in())));
+              break;
+            }
+          }
+          handler_t::complete_txn(promise);
+        }
+      }
+
+      auto run(outer::handler_t& handler, int num_iter) {
+        using namespace std::chrono;
+        auto start = high_resolution_clock::now();
+        in_msg_t msg{ 1 };
+        for (int iter{}; iter < num_iter; ++iter) {
+          // both msg and txn **must** be lvalues to avoid dangling pointers
+          // (or have the whole nested expression in send_msg())
+          auto txn_start = handler_t::start_txn_t{ std::move(msg), state_t{iter} };
+          //auto proxy = start_proxy_t{ txn };
+          [[maybe_unused]] const auto& r = handler.send_msg(std::move(txn_start));
+        }
+        auto end = high_resolution_clock::now();
+        return (double)duration_cast<nanoseconds>(end - start).count();
+      }
+    } // namespace outer
+  } // namespace variant
 } // namespace nested
+
+double iters_per_ms(int iters, double ns) {
+  return (double)iters / (ns * 1e-6);
+}
+
+double ns_per_iter(int iters, double ns) {
+  return ns / (double)iters;
+}
+
+void log_result(std::string_view name, int iters, double ns) {
+  std::cerr << name << ", elapsed: " << std::fixed << std::setprecision(5)
+    << ns * 1e-6 << "ms, (" << iters << " iters"
+    << ", " << iters_per_ms(iters, ns) << " iters/ms"
+    << ", " << ns_per_iter(iters, ns) << " ns/iter)"
+    << std::endl;
+}
 
 int main() {
   using namespace nested;
@@ -274,13 +395,19 @@ int main() {
   int num_iter{ 10'000'000 };
 
   try {
-    poly::handler_t poly_outer_handler{ poly::outer::txn::handler() };
-    auto elapsed = poly::run(poly_outer_handler, num_iter);
-    log_result("poly", num_iter, elapsed);
+    double elapsed;
+#if 0
+    uptr::handler_t uptr_outer_handler{ uptr::outer::txn::handler() };
+    elapsed = uptr::run(uptr_outer_handler, num_iter);
+    log_result("uptr", num_iter, elapsed);
 
     basic::handler_t basic_outer_handler{ basic::outer::txn::handler() };
     elapsed = basic::run(basic_outer_handler, num_iter);
     log_result("basic", num_iter, elapsed);
+#endif
+    variant::outer::handler_t variant_handler{ variant::outer::handler() };
+    elapsed = variant::outer::run(variant_handler, num_iter);
+    log_result("variant", num_iter, elapsed);
   }
   catch (std::exception& e) {
     std::cout << "exception: " << e.what() << std::endl;

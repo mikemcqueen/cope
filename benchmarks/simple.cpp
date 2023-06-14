@@ -139,12 +139,13 @@ namespace simple {
       auto run(handler_t& handler, int num_iter) {
         using namespace std::chrono;
         auto start = high_resolution_clock::now();
-        in_msg_t msg{ 1 };
+        // in_msg_t msg{ 1 };
+        in_msg_t msg; msg.value = 1;
         // TODO: once state is no longer unique_ptr
         for (int iter{}; iter < num_iter; ++iter) {
           // both msg and txn **must** be lvalues to avoid dangling pointers
           // (or have the whole nested expression in send_msg())
-          auto txn_start = handler_t::start_txn_t{ msg, state_t{iter} };
+          auto txn_start = handler_t::start_txn_t{ std::move(msg), state_t{iter} };
           //auto proxy = start_proxy_t{ txn };
           [[maybe_unused]] const auto& r = handler.send_msg(std::move(txn_start));
         }
