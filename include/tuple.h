@@ -8,7 +8,7 @@
 namespace tuple {
   // Type alias for a tuple of concatenated types, given a list of tuple types.
   template<typename... Ts>
-  using type_concat_t = decltype(std::tuple_cat(std::declval<Ts>()...));
+  using concat_t = decltype(std::tuple_cat(std::declval<Ts>()...));
 
   template <typename T, typename... Ts>
   struct distinct_impl : std::type_identity<T> {};

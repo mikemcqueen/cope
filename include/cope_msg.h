@@ -3,16 +3,23 @@
 #ifndef INCLUDE_COPE_MSG_H
 #define INCLUDE_COPE_MSG_H
 
-#include <memory>
-#include <string>
-#include <string_view>
-#include "cope_proxy.h"
-#include "cope_result.h"
-#include "internal/cope_log.h"
+//#include <memory>
+//#include "cope_proxy.h"
+//#include "cope_result.h"
+//#include "internal/cope_log.h"
 
 using namespace std::literals;
 
 namespace cope {
+  namespace msg {
+    template<typename MsgT, typename StateT>
+    struct start_txn_t {
+      MsgT msg;
+      StateT state;
+    };
+  } // namespace msg
+
+#if 0
   namespace msg {
     struct data_t;
     enum class id_t;
@@ -111,6 +118,7 @@ namespace cope {
       return msg.msg_id == id::kTxnStart;
     }
   } // namespace msg
+#endif
 } // namespace cope
 
 #endif // INCLUDE_COPE_MSG_H
