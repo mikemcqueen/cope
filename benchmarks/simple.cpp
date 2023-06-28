@@ -39,14 +39,17 @@ namespace simple {
     //using receive_start_txn = cope::txn::receive_awaitable<handler_t, state_t>;
 
     template<typename ContextT>
-    auto handler(ContextT& context) -> cope::txn::task_t<ContextT> {
+    auto handler([[maybe_unused]] ContextT& context,
+      [[maybe_unused]] cope::txn::id_t task_id)
+      -> cope::txn::task_t<ContextT>
+    {
       using task_t = cope::txn::task_t<ContextT>;
       using receive_start_txn = cope::txn::receive_awaitable<task_t, in_msg_t, state_t>;
 
       state_t state;
 
       while (true) {
-        auto& promise = co_await receive_start_txn{ kTxnId, state };
+        auto& promise = co_await receive_start_txn{ state };
         cope::log::info("  started txn with state: {}", state);
         task_t::complete_txn(promise);
       }
@@ -103,7 +106,7 @@ int main() {
     using task_t = cope::txn::task_t<context_t>;
 
     context_t txn_context{};
-    task_t task{ txn::handler(txn_context) };
+    task_t task{ txn::handler(txn_context, kTxnId) };
     elapsed = txn::run(task, num_iter);
     log_result("simple", num_iter, elapsed);
   }
