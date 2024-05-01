@@ -4,7 +4,6 @@
 #include "cope.h"
 #include "sellitem_msg.h"
 #include "setprice_msg.h"
-//#include "txsetprice.h"
 #include "ui_msg.h"
 
 namespace sellitem {
@@ -26,7 +25,6 @@ namespace sellitem {
     }; // sellitem::txn::type_bundle_t
 
     template<typename Context>
-    auto handler(Context& /*context*/, cope::txn::id_t /*task_id*/)
-      -> cope::txn::task_t<Context>;
+    auto handler(Context&, cope::txn::id_t) -> cope::txn::task_t<Context>;
   } // namespace txn
 } // namespace sellitem

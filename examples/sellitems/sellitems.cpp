@@ -15,12 +15,12 @@
 using namespace std::literals;
 
 namespace ui {
-  template<typename V>
-  auto dispatch(const V& /*msg*/) {
+  template<typename Variant>
+  auto dispatch(const Variant& var) {
     using namespace cope;
-    using namespace ui::msg;
-    // auto id = std::visit(ui::msg::id_visitor, msg)
     /*
+    using namespace ui::msg;
+    auto id = std::visit(ui::msg::get_id, msg)
     if ((msg.msg_id < id::kFirst) || (msg.msg_id > id::kLast)) {
       log::info("dispatch(): unsupported message id, {}", msg.msg_id);
       return result_code::e_unexpected_msg_id;
@@ -167,10 +167,7 @@ namespace {
       auto var = get_data(expected_out_msg_id, extra);
       // TODO: get_data can do this
       std::variant<sellitem::msg::data_t, setprice::msg::data_t,
-                   sellitem::txn::type_bundle_t::start_txn_t
-                   //,setprice::txn::type_bundle_t::start_txn_t
-                   > v2;
-      //std::variant<std::monostate, type_bundle_t::start_txn_t, setprice::type_bundle_t::start_txn_t> start_txn;
+                   sellitem::txn::type_bundle_t::start_txn_t> v2;
       using namespace sellitem;
       if (std::holds_alternative<msg::data_t::row_vector>(var)) {
         auto& rows = std::get<msg::data_t::row_vector>(var);
@@ -190,7 +187,7 @@ namespace {
         [[maybe_unused]] const auto& out_msg = task.send_msg(std::move(msg));
         out_msg_id = ui::msg::get_id(out_msg);
       }, v2);
-      // assertout_msg_id == expected_out_msg_id);
+      //assert(out_msg_id == expected_out_msg_id);
       ++frame_count;
       if (!task.promise().txn_running()) {
         assert(expected_out_msg_id == -1);
@@ -204,24 +201,24 @@ namespace {
 
 int main() {
   //cope::log::enable();
-  //using namespace sellitem::txn;
   using context_t = cope::txn::context_t<sellitem::txn::type_bundle_t, setprice::txn::type_bundle_t>;
   context_t context{};
   app::task_t task{ sellitem::txn::handler(context, sellitem::kTxnId) };
   using namespace std::chrono;
+  int total_frames{};
+  int num_iter{1};
   auto start = high_resolution_clock::now();
-  auto total_frames{ 0 };
-  auto num_iter{ 1 };
   for (int iter{}; iter < num_iter; ++iter) {
     auto frame_count = run(task);
     total_frames += frame_count;
   }
   auto end = high_resolution_clock::now();
-  auto elapsed = (double)duration_cast<microseconds>(end - start).count();
+  auto elapsed = (double)duration_cast<nanoseconds>(end - start).count();
   std::cerr << num_iter << " iters, " << total_frames << " frames, "
             << std::fixed << std::setprecision(2)
-            << "Elapsed: " << elapsed * 1e-3 << "ms "
-            << "(" << elapsed / total_frames << "us/frame)"
+            << "Elapsed: " << elapsed * 1e-6 << "ms "
+            << std::setprecision(0)
+            << "(" << elapsed / total_frames << "ns/frame)"
             << std::endl;
   return 0;
 }

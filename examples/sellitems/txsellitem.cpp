@@ -135,8 +135,6 @@ namespace sellitem::txn {
 
       // TODO: better:
       while (!promise.context().result().unexpected()) {
-    log::info("1 sellitem::handler received {}", app::get_type_name(promise.context().in()));
-
         if (error(msg::validate(promise.context().in()))) break;
         auto opt_row_index = get_candidate_row(promise, state);
         if (!opt_row_index.has_value()) break;
@@ -146,27 +144,23 @@ namespace sellitem::txn {
 
         if (!row->selected) {
           co_yield click_table_row(row_index);
-    log::info("2 sellitem::handler received {}", app::get_type_name(promise.context().in()));
           if (error(validate_row(promise, row_index, state, &row,
             { .selected{true} }))) continue;
         }
 
         if (row->item_price != state.item_price) {
           co_yield click_setprice_button();
-    log::info("3 sellitem::handler received {}", app::get_type_name(promise.context().in()));
           if (error(setprice::msg::validate(promise.context().in()))) continue;
 
           auto& setprice_msg = std::get<setprice::msg::data_t>(promise.context().in());
           co_await setprice::txn::start(setprice_task, std::move(setprice_msg),
             state.item_price);
-    log::info("4 sellitem::handler received {}", app::get_type_name(promise.context().in()));
           if (error(validate_row(promise, row_index, state, &row,
             { .selected{true}, .price{true} }))) continue;
         }
 
         if (!row->item_listed) {
           co_yield click_listitem_button();
-    log::info("5 sellitem::handler received {}", app::get_type_name(promise.context().in()));
           if (error(validate_row(promise, row_index, state, &row,
             { .selected{true}, .price{true}, .listed{true} }))) continue;
         }
