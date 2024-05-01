@@ -5,7 +5,7 @@
 #include <iostream>
 #include <string_view>
 #include "cope.h"
-#include "cope_proxy.h"
+//#include "cope_proxy.h"
 
 namespace simple {
   constexpr auto kTxnId{ static_cast<cope::txn::id_t>(100) };
@@ -20,23 +20,12 @@ namespace simple {
 
     using state_t = int;
 
-    //using start_txn_t = cope::txn::start_t<in_msg_t, state_t>;
-    //using start_proxy_t = cope::msg::proxy_t<start_t>;
     struct type_bundle_t {
       // todo: templated type bundle that takes startMsgT, stateT, in=startMsgT, out=monostate
       using start_txn_t = cope::msg::start_txn_t<in_msg_t, state_t>;
       using in_tuple_t = std::tuple<start_txn_t, in_msg_t>;
       using out_tuple_t = std::tuple<out_msg_t>;
     };
-
-    /*
-    //using msg_proxy_t = cope::msg::proxy_t<msg_t>;
-    // TODO: or, proxy::scalar_t? or, "trivial_t", "aggregrate_t" ?
-    using state_proxy_t = cope::proxy::raw_ptr_t<state_t>;
-    */
-
-    //using handler_t = cope::txn::handler_t<in_msg_t, state_t>;
-    //using receive_start_txn = cope::txn::receive_awaitable<handler_t, state_t>;
 
     template<typename ContextT>
     auto handler([[maybe_unused]] ContextT& context,
@@ -61,11 +50,8 @@ namespace simple {
       auto start = high_resolution_clock::now();
       // in_msg_t msg{ 1 };
       in_msg_t msg; msg.value = 1;
-      // TODO: once state is no longer unique_ptr
       for (int iter{}; iter < num_iter; ++iter) {
-        // both msg and txn **must** be lvalues to avoid dangling pointers
-        // (or have the whole nested expression in send_msg())
-        using start_txn_t = simple::txn::type_bundle_t::start_txn_t;
+        using start_txn_t = /*simple::txn::*/type_bundle_t::start_txn_t;
         auto txn_start = start_txn_t{ std::move(msg), state_t{iter} };
         [[maybe_unused]] const auto& r = task.send_msg(std::move(txn_start));
       }
@@ -83,7 +69,7 @@ namespace simple {
   }
 
   void log_result(std::string_view name, int iters, double ns) {
-    std::cerr << name << ", elapsed: " << std::fixed << std::setprecision(5)
+    std::cerr << name << ", elapsed: " << std::fixed << std::setprecision(0)
       << ns * 1e-6 << "ms, (" << iters << " iters"
       << ", " << iters_per_ms(iters, ns) << " iters/ms"
       << ", " << ns_per_iter(iters, ns) << " ns/iter)"
@@ -105,8 +91,8 @@ int main() {
     using context_t = cope::txn::context_t<txn::type_bundle_t>;
     using task_t = cope::txn::task_t<context_t>;
 
-    context_t txn_context{};
-    task_t task{ txn::handler(txn_context, kTxnId) };
+    context_t context{};
+    task_t task{ txn::handler(context, kTxnId) };
     elapsed = txn::run(task, num_iter);
     log_result("simple", num_iter, elapsed);
   }

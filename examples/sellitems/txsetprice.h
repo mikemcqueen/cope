@@ -4,58 +4,43 @@
 #define INCLUDE_TXSETPRICE_H
 
 #include <string_view>
-#include "txsellitem.h"
 #include "cope.h"
+#include "sellitem_msg.h"
+#include "setprice_msg.h"
+#include "ui_msg.h"
+//#include "txsellitem.h" // boo, for context_t, task_t
 
 namespace setprice {
   constexpr auto kTxnId{ cope::txn::make_id(10) };
-//  constexpr auto kMsgId{ cope::msg::make_id(200) };
-
-//  using msg_base_t = cope::msg_t;
-
-  namespace msg {
-    struct data_t { //: public msg_base_t {
-      data_t(int price) : /*msg_base_t{ kMsgId },*/ price(price) {}
-
-      int price;
-    };
-
-    //using proxy_t = cope::msg::proxy_t<cope::msg_ptr_t>;
-
-    inline auto validate(const msg_base_t& msg) {
-      return cope::result_code::s_ok; // return cope::msg::validate(msg, kMsgId);
-    }
-  } // namespace msg
 
   namespace txn {
-    using in_msg_types = std::tuple<msg::data_t, sellitem::msg::data_t>;
     using out_msg_types = std::tuple<ui::msg::click_widget::data_t, ui::msg::send_chars::data_t>;
 
+    //using state_t = int; // "price"
     struct state_t {
-      cope::msg::id_t prev_msg_id; // i.e. "who called us"
+      //cope::msg::id_t prev_msg_id; // i.e. "who called us"
       int price;
     };
 
-    using state_proxy_t = cope::proxy::unique_ptr_t<state_t>;
-    using start_t = cope::txn::start_t<msg_base_t, msg::proxy_t, state_proxy_t>;
-    using start_proxy_t = cope::msg::proxy_t<start_t>;
-    using handler_t = cope::txn::handler_t<msg::proxy_t>;
-    using receive = cope::txn::receive<msg_base_t, msg::proxy_t, state_proxy_t>;
-    using start_awaitable = cope::txn::start<msg_base_t, msg::proxy_t, state_proxy_t>;
+    struct type_bundle_t {
+      using start_txn_t = cope::msg::start_txn_t<msg::data_t, state_t>;
+      using in_tuple_t = std::tuple<start_txn_t, msg::data_t, sellitem::msg::data_t>;
+      using out_tuple_t = out_msg_types; // std::tuple<out_msg_t>;
+    };
 
-    inline auto start(handler_t::handle_t handle,
-      handler_t::promise_type& promise,
-      const sellitem::txn::state_t& sell_state)
-    {
-      auto setprice_state = std::make_unique<state_t>(
-        sellitem::kMsgId, sell_state.item_price);
-      return start_awaitable{
-        handle, std::move(promise.in().get_moveable()), std::move(setprice_state)
-      };
+    template</*typename FromTaskT, */typename ToTaskT>
+    using start_awaitable = cope::txn::start_awaitable</*FromTaskT, */ToTaskT, msg::data_t, state_t>;
+
+    template</*typename FromTaskT, */typename ToTaskT>
+    inline auto start(const ToTaskT& task, setprice::msg::data_t&& msg, int price) {
+      state_t state{ price };
+      return start_awaitable</*FromTaskT, */ToTaskT>{ task.handle(), std::move(msg), std::move(state) };
     }
 
-    auto handler() -> handler_t;
-  } // namespace msg
+    template<typename Context>
+    auto handler(Context& /*context*/, cope::txn::id_t /*task_id*/)
+      -> cope::txn::task_t<Context>;
+  } // namespace txn
 } // namespace setprice
 
 #endif // INCLUDE_TXSETPRICE_H

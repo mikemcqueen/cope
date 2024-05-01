@@ -1,3 +1,12 @@
+* some way to make result_t and result_code share the same formatter (converting constructor? delegating template specialization?)
+
+* so the context using "all the bundles" is a bit weird. isn't there a way around this using
+  the type-erased coroutine handle?
+  * maybe not. because in a triple-nested scenario, you'd have:
+    * context<fromA, toB> -- outer
+    * context<fromB, toC> -- middle
+    * for the start_awaitables anyway. maybe i can fudge my way around that with coro_handle<> ?
+
 * make sellitem example compile
 * make validation work. 
 * see _storage_type in <format>, maybe alternative to proxy_t (maybe shouuld be storage_t)

@@ -8,21 +8,24 @@
 #include <string>
 #include <variant>
 #include "cope.h"
-#include "txsellitem.h"
-#include "txsetprice.h"
+#include "handlers.h"
 #include "ui_msg.h"
 #include "internal/cope_log.h"
 
 using namespace std::literals;
 
 namespace ui {
-  auto dispatch(const sellitem::msg_base_t& msg) {
+  template<typename V>
+  auto dispatch(const V& /*msg*/) {
     using namespace cope;
     using namespace ui::msg;
+    // auto id = std::visit(ui::msg::id_visitor, msg)
+    /*
     if ((msg.msg_id < id::kFirst) || (msg.msg_id > id::kLast)) {
       log::info("dispatch(): unsupported message id, {}", msg.msg_id);
       return result_code::e_unexpected_msg_id;
     }
+    */
     // actual dispatch of message (e.g. to click a button) would go here...
     return result_code::s_ok;
   }
@@ -35,21 +38,21 @@ namespace {
     using namespace sellitem::msg;
 
     const data_t::row_vector const_rows_page_1{
-      { "magic balls", 7, false, false },
+      { "magic balls", 7, false, false }, // 0
       { "magic beans", 1, false, false },
       { "magic beans", 1, false, false },
       { "magic beans", 1, true, false },
       { "magic beans", 1, false, true },
-      { "magic beans", 1, true, true },
+      { "magic beans", 1, true, true },   // 5
       { "magic balls", 7, false, false },
       { "magic beans", 2, false, false },
       { "magic beans", 2, true, false },
       { "magic beans", 2, false, true },
-      { "magic beans", 2, true, true },
+      { "magic beans", 2, true, true },   // 10
       { "magic balls", 8, false, false },
       { "magic beans", 3, false, true },
       { "magic beans", 5, true, false },
-      { "magic balls", 9, false, false }
+      { "magic balls", 9, false, false }  // 14
     };
     data_t::row_vector rows_page_1;
 
@@ -75,9 +78,9 @@ namespace {
     using namespace sellitem::msg;
     using namespace state;
 
-    bool xtralog = false;
+    bool xtralog{};
 
-    out_msg = cope::msg::id::kUndefined;
+    out_msg = -1; //cope::msg::id::kUndefined;
     out_extra.clear();
     for (; row_index < rows_page_1.size(); ++row_index,
       first = true,
@@ -90,8 +93,10 @@ namespace {
       if (row.item_name != "magic beans") continue;
       if (row.item_price == 2 && row.item_listed) continue;
 
-      if (first) log::info("---ROW {}--- selected: {}, listed: {}",
-        row_index, row.selected, row.item_listed);
+      if (first) {
+        log::info("---ROW {}--- selected: {}, listed: {}", row_index, row.selected,
+          row.item_listed);
+      }
 
       if (!row.selected) {
         if (first) {
@@ -122,6 +127,7 @@ namespace {
         row.item_price = 2;
         break;
       }
+
       in_setprice = false;
       if (!row.item_listed) {
         if (!listed_clicked) {
@@ -136,71 +142,60 @@ namespace {
     first = false;
 
     std::variant<std::monostate, data_t::row_vector, int> result{};
-    if (row_index == rows_page_1.size()) {
-      if (final_message_sent) {
-        final_message_sent = false;
-        // result = std::monostate;
-      }
-      else {
-        final_message_sent = true;
-      }
-    }
-    else if (in_setprice) {
+    if (in_setprice) {
       result = rows_page_1[row_index].item_price;
-    }
-    else {
-      // unnecessary. pass & copy directly below w/no move
-      data_t::row_vector rows_copy = rows_page_1;
-      result = rows_copy;
+    } else {
+      if (row_index < rows_page_1.size() || !final_message_sent) {
+        // unnecessary. pass & copy directly below w/no move
+        data_t::row_vector rows_copy = rows_page_1;
+        result = rows_copy;
+      }
+      if (row_index == rows_page_1.size()) {
+        final_message_sent = !final_message_sent;
+      }
     }
     return result;
   } // namespace (anonymous)
 
-  auto run(sellitem::txn::handler_t& handler) {
-    assert(handler.promise().txn_ready());
+  auto run(app::task_t& task) {
+    assert(task.promise().txn_ready());
     state::reset();
     int frame_count{};
     while (true) {
-      cope::msg::id_t actual_out_msg_id;
       cope::msg::id_t expected_out_msg_id;
       std::string extra;
       auto var = get_data(expected_out_msg_id, extra);
-      using namespace sellitem;
       // TODO: get_data can do this
-      std::variant<txn::msg_proxy_t, setprice::msg::proxy_t> v2;
+      std::variant<sellitem::msg::data_t, setprice::msg::data_t,
+                   sellitem::txn::type_bundle_t::start_txn_t
+                   //,setprice::txn::type_bundle_t::start_txn_t
+                   > v2;
+      //std::variant<std::monostate, type_bundle_t::start_txn_t, setprice::type_bundle_t::start_txn_t> start_txn;
+      using namespace sellitem;
       if (std::holds_alternative<msg::data_t::row_vector>(var)) {
         auto& rows = std::get<msg::data_t::row_vector>(var);
         auto msg = msg::data_t{ std::move(rows) };
-        auto proxy = txn::msg_proxy_t{ std::move(msg) };
-        v2 = std::move(proxy);
-      }
-      else {
+        if (!task.promise().txn_running()) {
+          v2 = txn::type_bundle_t::start_txn_t{ std::move(msg), txn::state_t{ "magic beans", 2 } };
+        } else {
+          v2 = msg;
+        }
+      } else {
         assert(std::holds_alternative<int>(var));
-        auto msg = setprice::msg::data_t{ std::get<int>(var) };
-        auto proxy = setprice::txn::msg_proxy_t{ msg };
-        v2 = std::move(proxy);
+        v2 = setprice::msg::data_t{ std::get<int>(var) };
       }
-      if (!handler.promise().txn_running()) {
-        // msg_ptr = std::move(txn::make_start_txn(std::move(in_ptr),
-        //   "magic beans", 2));
-        auto txn = txn::start_t{ kTxnId, 
-          std::holds_alternative<>(v2) ?
-          std::get<>(v2) : std::get<setprice::msg_proxy_t&>(v2),
-          txn::state_proxy_t{ "magic beans", 2} };
-        const auto& out_msg = handler.send_msg(txn::start_proxy_t{ txn });
-        actual_out_msg_id = out_msg.msg_id;
-      }
-      else {
-        const auto& out_msg = handler.send_msg(std::holds_alternative<msg_proxy_t>(v2) ?
-          std::get<msg_proxy_t&>(v2) : std::get<setprice::msg_proxy_t&>(v2));
-        actual_out_msg_id = out_msg.msg_id;
-      }
+      log::info("constructed {}", app::get_type_name(v2));
+      int out_msg_id{};
+      std::visit([&task, &out_msg_id](auto&& msg){
+        [[maybe_unused]] const auto& out_msg = task.send_msg(std::move(msg));
+        out_msg_id = ui::msg::get_id(out_msg);
+      }, v2);
+      // assertout_msg_id == expected_out_msg_id);
       ++frame_count;
-      if (!handler.promise().txn_running()) {
-        assert(expected_out_msg_id == cope::msg::id::kUndefined);
+      if (!task.promise().txn_running()) {
+        assert(expected_out_msg_id == -1);
         break;
       }
-      assert(actual_out_msg_id == expected_out_msg_id);
       //ui::dispatch(out_msg);
     }
     return frame_count;
@@ -208,20 +203,25 @@ namespace {
 } // namespace (anon)
 
 int main() {
-  cope::log::enable();
-  sellitem::txn::handler_t tx_sell{ sellitem::txn::handler() };
+  //cope::log::enable();
+  //using namespace sellitem::txn;
+  using context_t = cope::txn::context_t<sellitem::txn::type_bundle_t, setprice::txn::type_bundle_t>;
+  context_t context{};
+  app::task_t task{ sellitem::txn::handler(context, sellitem::kTxnId) };
   using namespace std::chrono;
   auto start = high_resolution_clock::now();
   auto total_frames{ 0 };
   auto num_iter{ 1 };
   for (int iter{}; iter < num_iter; ++iter) {
-    auto frame_count = run(tx_sell);
+    auto frame_count = run(task);
     total_frames += frame_count;
   }
   auto end = high_resolution_clock::now();
-  auto elapsed = 1e-6 * (double)duration_cast<nanoseconds>(end - start).count();
-  std::cerr << "Elapsed: " << std::fixed << elapsed << std::setprecision(9)
-    << "ms, (" << num_iter << " iters, " << total_frames << " frames)"
-    << std::endl;
+  auto elapsed = (double)duration_cast<microseconds>(end - start).count();
+  std::cerr << num_iter << " iters, " << total_frames << " frames, "
+            << std::fixed << std::setprecision(2)
+            << "Elapsed: " << elapsed * 1e-3 << "ms "
+            << "(" << elapsed / total_frames << "us/frame)"
+            << std::endl;
   return 0;
 }

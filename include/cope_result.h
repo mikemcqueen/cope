@@ -26,19 +26,17 @@ namespace cope {
   }
 
   struct result_t {
+    auto succeeded() const { return cope::succeeded(code); }
+    auto failed() const { return cope::failed(code); }
+    auto unexpected() const { return cope::unexpected(code); }
+
     result_code code = result_code::s_ok;
-
-    void set(result_code rc) { code = rc; }
-
-    auto succeeded() { return cope::succeeded(code); }
-    auto failed() { return cope::failed(code); }
-    auto unexpected() { return cope::unexpected(code); }
   };
 } // namespace cope::result
 
 template <>
-struct std::formatter<cope::result_t> : std::formatter<std::string> {
-  auto format(cope::result_t result, format_context& ctx) const {
+struct std::formatter<cope::result_code> : std::formatter<std::string> {
+  auto format(cope::result_code result, format_context& ctx) const {
     using cope::result_code;
     static std::unordered_map<cope::result_code, std::string> rc_map = {
       { result_code::s_ok, "s_ok" },
@@ -50,7 +48,7 @@ struct std::formatter<cope::result_t> : std::formatter<std::string> {
       { result_code::e_unexpected_msg_type, "e_unexpected_msg_type" },
       { result_code::e_unexpected_txn_id, "e_unexpected_txn_id" }
     };
-    return std::format_to(ctx.out(), "{}", rc_map[result.code]);
+    return std::format_to(ctx.out(), "{}", rc_map[result/*.code*/]);
   }
 };
 

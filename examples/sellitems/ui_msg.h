@@ -3,19 +3,59 @@
 #ifndef INCLUDE_UI_MSG_H
 #define INCLUDE_UI_MSG_H
 
-#include <string_view>
-
 namespace ui::msg {
+  namespace click_widget {
+    struct data_t {
+      int widget_id;
+    };
+  }
+  namespace click_point {
+    struct data_t {
+      int x;
+      int y;
+    };
+  }
+  namespace click_table_row {
+    struct data_t {
+      int row;
+    };
+  }
+  namespace send_chars {
+    struct data_t {
+      int temp;
+    };
+  }
+
   namespace id {
-    constexpr auto kFirst{          cope::msg::make_id(1000) };
+    constexpr auto kFirst{          1000 };//cope::msg::make_id(1000) };
 
     constexpr auto kClickWidget{    kFirst };
-    constexpr auto kClickPoint{     cope::msg::make_id(1001) };
-    constexpr auto kClickTableRow{  cope::msg::make_id(1002) };
-    constexpr auto kSendChars{      cope::msg::make_id(1003) }; 
+    constexpr auto kClickPoint{     1001 }; // cope::msg::make_id(1001) };
+    constexpr auto kClickTableRow{  1002 }; // cope::msg::make_id(1002) };
+    constexpr auto kSendChars{      1003 }; // cope::msg::make_id(1003) }; 
 
-    constexpr auto kLast{           cope::msg::make_id(1099) };
+    constexpr auto kLast{           1099 }; // cope::msg::make_id(1099) };
   }
+
+  template<typename Variant>
+  inline auto get_id(const Variant& var) {
+    auto id = [&var](auto&& arg) -> int {
+      using T = std::decay_t<decltype(arg)>;
+      if constexpr (std::is_same_v<T, click_widget::data_t>) {
+        return id::kClickWidget;
+      } else if constexpr (std::is_same_v<T, click_point::data_t>) {
+        return id::kClickPoint;
+      } else if constexpr (std::is_same_v<T, click_table_row::data_t>) {
+        return id::kClickTableRow;
+      } else if constexpr (std::is_same_v<T, send_chars::data_t>) {
+        return id::kSendChars;
+      } else {
+        return -1;
+      }
+    };
+    return std::visit(id, var);
+  }
+
 } // namespace ui::msg
 
 #endif // INCLUDE_UI_MSG_H
