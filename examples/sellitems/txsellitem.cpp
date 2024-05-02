@@ -6,81 +6,61 @@
 
 namespace sellitem::txn {
   using namespace std::literals;
-
+  namespace log = cope::log;
   using cope::result_code;
-  using promise_type = app::task_t::promise_type;
   using sellitem::msg::data_t;
   using sellitem::msg::row_data_t;
-  namespace log = cope::log;
+  using context_type = app::context_t;
 
-  auto get_row(const promise_type& promise, size_t row_index,
+  auto get_row(const context_type& context, size_t row_index,
     const row_data_t** row)
   {
-    using start_txn_t = sellitem::txn::type_bundle_t::start_txn_t;
-    const data_t* msg{};
-    if (std::holds_alternative<start_txn_t>(promise.context().in())) {
-      const auto& txn = std::get<start_txn_t>(promise.context().in());
-      msg = &txn.msg;
-    } else {
-      msg = &std::get<data_t>(promise.context().in());
+    const data_t& msg = std::get<data_t>(context.in());
+    if (row_index >= msg.rows.size()) {
+      return result_code::e_fail;
     }
-    if (row_index >= msg->rows.size()) {
-      return cope::result_code::e_fail;
-    }
-    *row = &msg->rows[row_index];
-    return cope::result_code::s_ok;
+    *row = &msg.rows.at(row_index);
+    return result_code::s_ok;
   }
 
-  auto is_candidate_row(const data_t& msg, const state_t& state,
-    size_t row_index)
-  {
-    auto& row = msg.rows.at(row_index);
-    if (row.item_name == state.item_name) {
-      if ((row.item_price != state.item_price)
-        || !row.item_listed)
-      {
-        return true;
-      }
-    }
-    return false;
+  auto is_candidate_row(const row_data_t& row, const state_t& state) {
+    return (row.item_name == state.item_name) &&
+      ((row.item_price != state.item_price) || !row.item_listed);
   }
 
   auto get_candidate_row(const data_t& msg, const state_t& state)
-    -> std::optional<size_t>
-  {
-    log::info("get_candidate_row({})", msg.rows.size());
-    for (size_t row{}; row < msg.rows.size(); ++row) {
-      if (is_candidate_row(msg, state, row)) {
-        const auto& rd = msg.rows.at(row);
-        log::info(" row: {}, actual: {}:{}, expected: {}:{}", row,
-          rd.item_name, rd.item_price, state.item_name, state.item_price);
-        return std::optional(row);
+    -> std::optional<size_t> {
+    for (size_t row_idx{}; row_idx < msg.rows.size(); ++row_idx) {
+      const auto& row = msg.rows.at(row_idx);
+      if (is_candidate_row(row, state)) {
+        log::info(" row: {}, actual: {}:{}, expected: {}:{}", row_idx,
+          row.item_name, row.item_price, state.item_name, state.item_price);
+        return std::optional(row_idx);
       }
     }
     log::info(" row: none");
     return std::nullopt;
   }
 
-  auto get_candidate_row(const promise_type& promise, const txn::state_t& state)
-    -> std::optional<size_t>
-  {
-    return get_candidate_row(std::get<data_t>(promise.context().in()), state);
+  auto get_candidate_row(const context_type& context,
+    const txn::state_t& state) {
+    return get_candidate_row(std::get<data_t>(context.in()), state);
   }
 
   struct validate_row_options {
-    bool selected = false;
-    bool price = false;
-    bool listed = false;
+    bool selected{};
+    bool price{};
+    bool listed{};
   };
 
-  auto validate_row(const promise_type& promise, size_t row_index,
+  auto validate_row(const context_type& context, size_t row_index,
     const state_t& state, const row_data_t** out_row,
-    validate_row_options options)
-  {
-    result_code rc = msg::validate(promise.context().in());
+    const validate_row_options& options) {
+    //
+    result_code rc = msg::validate(context.in());
     if (rc != result_code::s_ok) return rc;
 
-    rc = get_row(promise, row_index, out_row);
+    rc = get_row(context, row_index, out_row);
     if (rc != result_code::s_ok) return rc;
     const row_data_t& row = **out_row;
 
@@ -114,54 +94,48 @@ namespace sellitem::txn {
 
   template<typename Context>
   auto handler(Context& context, cope::txn::id_t /*task_id*/)
-    -> cope::txn::task_t<Context>
-  {
-    using receive_start_txn = cope::txn::receive_awaitable<app::task_t, msg::data_t, state_t>;
+    -> cope::txn::task_t<Context> {
+    using receive_start_txn =
+      cope::txn::receive_awaitable<app::task_t, data_t, state_t>;
 
     auto setprice_task{ setprice::txn::handler(context, setprice::kTxnId) };
     state_t state;
 
     while (true) {
       auto& promise = co_await receive_start_txn{ state };
-      const auto& error = [&promise](result_code rc) {
-        const auto& result = promise.context().set_result(rc);
-        if (result.failed()) {
-          log::info("  failed: {}", rc);
-        } else {
-          log::info("  success");
-        }
-        return result.failed();
+      auto& context = promise.context();
+      const auto& error = [&context](result_code rc) {
+        return context.set_result(rc).failed();
       };
 
-      // TODO: better:
-      while (!promise.context().result().unexpected()) {
-        if (error(msg::validate(promise.context().in()))) break;
-        auto opt_row_index = get_candidate_row(promise, state);
+      while (!context.result().unexpected()) {
+        if (error(msg::validate(context.in()))) break;
+        auto opt_row_index = get_candidate_row(context, state);
         if (!opt_row_index.has_value()) break;
         auto row_index = opt_row_index.value();
         const row_data_t* row;
-        if (error(get_row(promise, row_index, &row))) continue;
+        if (error(get_row(context, row_index, &row))) continue;
 
         if (!row->selected) {
           co_yield click_table_row(row_index);
-          if (error(validate_row(promise, row_index, state, &row,
+          if (error(validate_row(context, row_index, state, &row,
             { .selected{true} }))) continue;
         }
 
         if (row->item_price != state.item_price) {
           co_yield click_setprice_button();
-          if (error(setprice::msg::validate(promise.context().in()))) continue;
+          if (error(setprice::msg::validate(context.in()))) continue;
 
-          auto& setprice_msg = std::get<setprice::msg::data_t>(promise.context().in());
+          auto& setprice_msg = std::get<setprice::msg::data_t>(context.in());
           co_await setprice::txn::start(setprice_task, std::move(setprice_msg),
             state.item_price);
-          if (error(validate_row(promise, row_index, state, &row,
+          if (error(validate_row(context, row_index, state, &row,
             { .selected{true}, .price{true} }))) continue;
         }
 
         if (!row->item_listed) {
           co_yield click_listitem_button();
-          if (error(validate_row(promise, row_index, state, &row,
+          if (error(validate_row(context, row_index, state, &row,
             { .selected{true}, .price{true}, .listed{true} }))) continue;
         }
       }
@@ -169,5 +143,5 @@ namespace sellitem::txn {
     }
   }
 
-  template auto handler<app::context_t>(app::context_t&, cope::txn::id_t) -> app::task_t;
+  template auto handler<context_type>(context_type&, cope::txn::id_t) -> app::task_t;
 } // namespace sellitem::txn

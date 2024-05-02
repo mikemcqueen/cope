@@ -6,7 +6,6 @@
 #include <string_view>
 #include <tuple>
 #include "cope.h"
-#include "cope_proxy.h"
 
 namespace nested {
   constexpr auto kOuterTxnId{ cope::txn::make_id(100) };
@@ -77,7 +76,7 @@ namespace nested {
     template<typename TaskT>
     inline auto start_inner(const TaskT& task, inner::in_msg_t&& msg) {
       auto inner_state = inner::state_t{ 1 };
-      return inner::start_awaitable</*task_type, */TaskT>{ task.handle(), std::move(msg), inner_state };
+      return inner::start_awaitable<TaskT>{ task.handle(), std::move(msg), inner_state };
     }
 
     template<typename ContextT>
@@ -102,7 +101,6 @@ namespace nested {
             cope::log::info("  outer: inner txn starting...");
             auto& inner_msg = std::get<inner::in_msg_t>(promise.context().in());
             co_await start_inner(inner_task, std::move(inner_msg));
-            //[[maybe_unused]] auto x =  start_inner(inner_task, std::move(inner_msg));
             cope::log::info("  outer: inner txn complete");
             break;
           }
@@ -116,13 +114,12 @@ namespace nested {
       }
     }
 
-    // template<typename ContextT>
-    auto run(/*cope::txn::task_t<ContextT>*/ auto& task, int num_iter) {
+    auto run(auto& task, int num_iter) {
       using namespace std::chrono;
 
-      auto start = high_resolution_clock::now();
       outer::in_msg_t outer_msg{ 1 };
       inner::in_msg_t inner_msg{ 2 };
+      auto start = high_resolution_clock::now();
       for (int iter{}; iter < num_iter; ++iter) {
         // if no txn running, wrap msg in a start_t msg
         if (!task.promise().txn_running()) {
@@ -146,21 +143,23 @@ namespace nested {
   } // namespace outer
 } // namespace nested
 
-double iters_per_ms(int iters, double ns) {
-  return (double)iters / (ns * 1e-6);
-}
+namespace {
+  double iters_per_ms(int iters, double ns) {
+    return (double)iters / (ns * 1e-6);
+  }
 
-double ns_per_iter(int iters, double ns) {
-  return ns / (double)iters;
-}
+  double ns_per_iter(int iters, double ns) {
+    return ns / (double)iters;
+  }
 
-void log_result(std::string_view name, int iters, double ns) {
-  std::cerr << name << ", elapsed: " << std::fixed << std::setprecision(0)
-    << ns * 1e-6 << "ms, (" << iters << " iters"
-    << ", " << iters_per_ms(iters, ns) << " iters/ms"
-    << ", " << ns_per_iter(iters, ns) << " ns/iter)"
-    << std::endl;
-}
+  void log_result(std::string_view name, int iters, double ns) {
+    std::cerr << name << ", elapsed: " << std::fixed << std::setprecision(0)
+              << ns * 1e-6 << "ms, (" << iters << " iters"
+              << ", " << iters_per_ms(iters, ns) << " iters/ms"
+              << ", " << ns_per_iter(iters, ns) << " ns/iter)"
+              << std::endl;
+  }
+} // namespace (anon)
 
 int main() {
   using namespace nested;
@@ -171,17 +170,12 @@ int main() {
   int num_iter{ 50'000'000 };
 #endif
 
-  try {
-    double elapsed;
-    using context_t = cope::txn::context_t<inner::type_bundle_t, outer::type_bundle_t>;
-    using task_t = cope::txn::task_t<context_t>;
+  double elapsed;
+  using context_t = cope::txn::context_t<inner::type_bundle_t, outer::type_bundle_t>;
+  using task_t = cope::txn::task_t<context_t>;
 
-    context_t txn_context{};
-    task_t task{ outer::handler(txn_context, kOuterTxnId) };
-    elapsed = outer::run(task, num_iter);
-    log_result("nested", num_iter, elapsed);
-  }
-  catch (std::exception& e) {
-    std::cout << "exception: " << e.what() << std::endl;
-  }
+  context_t txn_context{};
+  task_t task{ outer::handler(txn_context, kOuterTxnId) };
+  elapsed = outer::run(task, num_iter);
+  log_result("nested", num_iter, elapsed);
 }

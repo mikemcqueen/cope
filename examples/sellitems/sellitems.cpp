@@ -200,13 +200,18 @@ namespace {
 } // namespace (anon)
 
 int main() {
-  //cope::log::enable();
+  using namespace std::chrono;
+
+#ifndef NDEBUG
+  cope::log::enable();
+  int num_iter{ 1 };
+#else
+  int num_iter{ 100000 };
+#endif
   using context_t = cope::txn::context_t<sellitem::txn::type_bundle_t, setprice::txn::type_bundle_t>;
   context_t context{};
   app::task_t task{ sellitem::txn::handler(context, sellitem::kTxnId) };
-  using namespace std::chrono;
   int total_frames{};
-  int num_iter{1};
   auto start = high_resolution_clock::now();
   for (int iter{}; iter < num_iter; ++iter) {
     auto frame_count = run(task);

@@ -6,8 +6,8 @@
 #include "internal/cope_log.h"
 
 namespace setprice::txn {
+  using context_type = app::context_t;
   using cope::result_code;
-  using promise_type = app::task_t::promise_type;
   using setprice::msg::data_t;
   namespace log = cope::log;
 
@@ -23,8 +23,8 @@ namespace setprice::txn {
     return rc;
   }
 
-  auto validate_price(const promise_type& promise, int price) {
-    auto& msg = promise.context().in();
+  auto validate_price(const context_type& context, int price) {
+    auto& msg = context.in();
     auto rc = setprice::msg::validate(msg);
     if (cope::succeeded(rc)) {
       rc = validate_price(std::get<data_t>(msg), price);
@@ -32,8 +32,8 @@ namespace setprice::txn {
     return rc;
   }
 
-  auto validate_complete(const promise_type& promise, cope::msg::id_t /*msg_id*/) {
-    return sellitem::msg::validate(promise.context().in());
+  auto validate_complete(const context_type& context, cope::msg::id_t /*msg_id*/) {
+    return sellitem::msg::validate(context.in());
   }
 
   auto enter_price_text(int /*price*/) {
@@ -57,16 +57,17 @@ namespace setprice::txn {
 
     while (true) {
       auto& promise = co_await receive_start_txn{ state };
-      const auto& error = [&promise](result_code rc) {
-        return promise.context().set_result(rc).failed();
+      auto& context = promise.context();
+      const auto& error = [&context](result_code rc) {
+        return context.set_result(rc).failed();
       };
-      while (!promise.context().result().unexpected()) {
-        if (error(validate_price(promise, state.price))) {
+      while (!context.result().unexpected()) {
+        if (error(validate_price(context, state.price))) {
           co_yield enter_price_text(state.price);
-          if (error(validate_price(promise, state.price))) continue;
+          if (error(validate_price(context, state.price))) continue;
         }
         co_yield click_ok_button();
-        error(validate_complete(promise, 0/*state.prev_msg_id*/));
+        error(validate_complete(context, 0/*state.prev_msg_id*/));
         break;
       }
       task_t::complete_txn(promise);

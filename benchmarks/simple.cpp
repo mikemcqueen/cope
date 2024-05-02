@@ -5,7 +5,6 @@
 #include <iostream>
 #include <string_view>
 #include "cope.h"
-//#include "cope_proxy.h"
 
 namespace simple {
   constexpr auto kTxnId{ static_cast<cope::txn::id_t>(100) };
@@ -48,10 +47,9 @@ namespace simple {
     auto run(cope::txn::task_t<ContextT>& task, int num_iter) {
       using namespace std::chrono;
       auto start = high_resolution_clock::now();
-      // in_msg_t msg{ 1 };
-      in_msg_t msg; msg.value = 1;
+      in_msg_t msg{ .value{1} };
       for (int iter{}; iter < num_iter; ++iter) {
-        using start_txn_t = /*simple::txn::*/type_bundle_t::start_txn_t;
+        using start_txn_t = type_bundle_t::start_txn_t;
         auto txn_start = start_txn_t{ std::move(msg), state_t{iter} };
         [[maybe_unused]] const auto& r = task.send_msg(std::move(txn_start));
       }

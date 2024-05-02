@@ -25,47 +25,39 @@ namespace cope::txn {
     complete
   };
 
-  // this can move back into task_t and not be templatized
+  // this can move back into task_t and not be templatized?
+  // or.. not? (probably not)
   template<typename TaskT>
-  struct basic_awaitable {
-    using handle_t = TaskT::handle_type;
+  class basic_awaitable {
+  public:
+    using handle_type = TaskT::handle_type;
     using promise_type = TaskT::promise_type;
+    using context_type = TaskT::context_type;
 
     bool await_ready() const { return {}; }
-    void await_suspend(handle_t h) { promise_ = &h.promise(); }
+    void await_suspend(handle_type h) { promise_ = &h.promise(); }
     promise_type& await_resume() const { return *promise_; }
 
     const promise_type& promise() const { return *promise_; }
     promise_type& promise() { return *promise_; }
-
-    // context() ? can i auto& it ?
-    //auto& context() { return promise().context(); }
+    //const context_type& context() const { return promise().context(); }
 
   private:
-    promise_type* promise_ = nullptr;
+    promise_type* promise_{};
   }; // struct basic_awaitable
 
   // txn::task_t
   template<typename ContextT>
   class task_t {
+    struct initial_awaitable;
+
   public:
-    using this_t = task_t<ContextT>;
+    using context_type = ContextT;
+    using task_type = task_t<context_type>;
     struct promise_type;
     using handle_type = std::coroutine_handle<promise_type>;
     using in_msg_type = typename ContextT::in_msg_type;
     using out_msg_type = typename ContextT::out_msg_type;
-
-    // TODO: private?
-    struct initial_awaitable {
-      bool await_ready() { return false; }
-      bool await_suspend([[maybe_unused]] handle_type h) {
-        if (!h.promise().context().active_handle()) {
-          h.promise().context().set_active_handle(h);
-        }
-        return false;
-      }
-      void await_resume() {}
-    }; // initial_awaitable
 
     // promise_type
     struct promise_type {
@@ -83,7 +75,7 @@ namespace cope::txn {
         throw;
       }
       void return_void() { throw std::runtime_error("co_return not allowed"); }
-      basic_awaitable<this_t> yield_value([[maybe_unused]] out_msg_type&& msg) {
+      basic_awaitable<task_type> yield_value([[maybe_unused]] out_msg_type&& msg) {
         log::info("yielding msg from txn_id:{}...", txn_id());
         return {};
       }
@@ -113,21 +105,22 @@ namespace cope::txn {
     }; // promise_type
 
     task_t() = delete;
+    task_t(task_t&) = delete;
+    task_t& operator=(const task_t&) = delete;
+
     explicit task_t(promise_type* p) noexcept :
       coro_handle_(handle_type::from_promise(*p)) {}
     ~task_t() { if (coro_handle_) coro_handle_.destroy(); }
 
-    task_t(task_t&) = delete;
-    task_t& operator=(const task_t&) = delete;
-
     auto handle() const { return coro_handle_; }
-    auto& promise() const { return coro_handle_.promise(); }
+    const auto& promise() const { return coro_handle_.promise(); }
+    auto& promise() { return coro_handle_.promise(); }
 
     template<typename Msg>
     // TODO: requires in_tuple_type contains Msg
     [[nodiscard]] decltype(auto) send_msg(Msg&& msg) {
       //validate_send_msg<(msg);
-      promise().context().set_in(std::move(msg));
+      promise().context().in() = std::move(msg);
       log::info("sending msg_idx:{} to task_id:{}", 
         promise().context().in().index(), active_handle().promise().txn_id());
       active_handle().resume();
@@ -153,6 +146,17 @@ namespace cope::txn {
     }
 
   private:
+    struct initial_awaitable {
+      bool await_ready() { return false; }
+      bool await_suspend(handle_type h) {
+        if (!h.promise().context().active_handle()) {
+          h.promise().context().set_active_handle(h);
+        }
+        return false;
+      }
+      void await_resume() {}
+    }; // initial_awaitable
+
     handle_type active_handle() const { return promise().context().active_handle(); }
     auto txn_id() const { return promise().txn_id(); }
 
@@ -189,16 +193,12 @@ namespace cope::txn {
     auto set_result(result_code rc) { result_.code = rc; return result_; }
 
     const auto& in() const { return in_; }
-    // TODO: use set_in, set_out only
     auto& in() { return in_; }
     const auto& out() const { return out_; }
     auto& out() { return out_; }
 
-    template<typename T>
-    void set_in(T&& value) { in_ = std::move(value); }
-
   private:
-    handle_type active_handle_ = nullptr;
+    handle_type active_handle_{};
     result_t result_;
     in_msg_type in_;
     out_msg_type out_;
@@ -207,10 +207,11 @@ namespace cope::txn {
   // TODO: StartTxnT type instead of msg/state types?
   // txn::receive_awaitable
   template<typename TaskT, typename MsgT, typename StateT>
-  struct receive_awaitable : basic_awaitable<TaskT> {
+  class receive_awaitable : public basic_awaitable<TaskT> {
     using task_type = TaskT;
     using start_txn_t = msg::start_txn_t<MsgT, StateT>;
 
+  public:
     receive_awaitable() = delete;
     explicit receive_awaitable(StateT& state) : state_(state) {}
 
@@ -236,7 +237,6 @@ namespace cope::txn {
         }
         else {
           // txn complete, no prev handle; "root" txn will return to send_msg()
-          // TODO: set_out
           this->promise().context().out() = std::monostate{};
           log::info("  returning a msg to send_msg()");
         }
@@ -263,7 +263,7 @@ namespace cope::txn {
       // move msg from incoming txn to context.in.
       // TODO: this is a little awkward.
       auto msg{ std::move(txn_start.msg) };
-      this->promise().context().set_in(std::move(msg));
+      this->promise().context().in() = std::move(msg);
       this->promise().set_txn_state(state::running);
       return this->promise();
     }
@@ -274,9 +274,10 @@ namespace cope::txn {
 
   // txn::start_awaitable
   template<typename TaskT, typename MsgT, typename StateT>
-  struct start_awaitable : basic_awaitable<TaskT> {
+  class start_awaitable : public basic_awaitable<TaskT> {
     using start_txn_t = msg::start_txn_t<MsgT, StateT>;
 
+  public:
     start_awaitable() = delete;
     // TODO: rvalue ref msg & state
     start_awaitable(TaskT::handle_type dst_handle, MsgT msg, StateT state) :
@@ -288,7 +289,6 @@ namespace cope::txn {
         this->promise().txn_id());
       auto& dst_promise = dst_handle_.promise();
       start_txn_t txn_start{ std::move(msg_), std::move(state_) };
-      // TODO: set_in
       dst_promise.context().in() = std::move(txn_start);
       log::info("  symmetric xfer to txn_id:{}", dst_promise.txn_id());
       dst_promise.set_prev_handle(this->promise().context().active_handle());
