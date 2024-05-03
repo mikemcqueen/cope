@@ -3,6 +3,9 @@
 #ifndef INCLUDE_UI_MSG_H
 #define INCLUDE_UI_MSG_H
 
+#include <format>
+#include <optional>
+
 namespace ui::msg {
   namespace click_widget {
     struct data_t {
@@ -38,6 +41,7 @@ namespace ui::msg {
   }
 
   template<typename Variant>
+#if 1
   inline auto get_id(const Variant& var) {
     auto id = [&var](auto&& arg) -> int {
       using T = std::decay_t<decltype(arg)>;
@@ -54,8 +58,36 @@ namespace ui::msg {
       }
     };
     return std::visit(id, var);
+#else
+  inline auto get_id(const Variant&) {
+    return -1;
+#endif
   }
 
+  template<typename T>
+  inline constexpr auto get_type_name(const T&) -> std::optional<std::string> {
+    return std::nullopt;
+  }
+
+  template<> inline constexpr auto get_type_name(const click_widget::data_t&)
+      -> std::optional<std::string> {
+    return "ui::msg::click_widget";
+  }
+
+  template<> inline constexpr auto get_type_name(const click_point::data_t&)
+      -> std::optional<std::string> {
+    return "ui::msg::click_point";
+  }
+
+  template<> inline constexpr auto get_type_name(const click_table_row::data_t&)
+      -> std::optional<std::string> {
+    return "ui::msg::click_table_row";
+  }
+
+  template<> inline constexpr auto get_type_name(const send_chars::data_t&)
+      -> std::optional<std::string> {
+    return "ui::msg::send_chars";
+  }
 } // namespace ui::msg
 
 #endif // INCLUDE_UI_MSG_H

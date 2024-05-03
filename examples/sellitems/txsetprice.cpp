@@ -36,9 +36,9 @@ namespace setprice::txn {
     return sellitem::msg::validate(context.in());
   }
 
-  auto enter_price_text(int /*price*/) {
+  auto enter_price_text(int price) {
     log::info("constructing enter_price_text");
-    return ui::msg::send_chars::data_t{ 1 };
+    return ui::msg::send_chars::data_t{ price };
   }
 
   auto click_ok_button() {
@@ -46,11 +46,11 @@ namespace setprice::txn {
     return ui::msg::click_widget::data_t{ 5 };
   }
 
-  template<typename Context>
-  auto handler(Context& /*context*/, cope::txn::id_t /*task_id*/)
-    -> cope::txn::task_t<Context>
+  template<typename ContextT>
+  auto handler(ContextT& /*context*/, cope::txn::id_t /*task_id*/)
+    -> cope::txn::task_t<ContextT>
   {
-    using task_t = cope::txn::task_t<Context>;
+    using task_t = cope::txn::task_t<ContextT>;
     using receive_start_txn = cope::txn::receive_awaitable<task_t, msg::data_t, state_t>;
 
     state_t state;

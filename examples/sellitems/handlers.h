@@ -1,55 +1,67 @@
 #pragma once
 
-#include "cope.h"
 #include "txsellitem.h"
 #include "txsetprice.h"
 #include "internal/cope_log.h"
-
+#include "cope.h"
 
 namespace visit {
   namespace log = cope::log;
 
 struct type_name {
-  void operator()(const sellitem::txn::type_bundle_t::start_txn_t&) const {
+  void operator()(const sellitem::msg::types::start_txn_t&) const {
     log::info("sellitem::txn");
   }
   void operator()(const sellitem::msg::data_t&) const {
     log::info("sellitem::msg");
   }
-  void operator()(const setprice::txn::type_bundle_t::start_txn_t&) const {
+  void operator()(const setprice::msg::types::start_txn_t&) const {
     log::info("setprice::txn");
   }
   void operator()(const setprice::msg::data_t&) const {
     log::info("setprice::msg");
   }
 };
-}
+} // namespace visit
 
 namespace app {
-  using context_t = cope::txn::context_t<sellitem::txn::type_bundle_t, setprice::txn::type_bundle_t>;
-  using task_t = cope::txn::task_t<context_t>;
+  /*constexpr inline auto get_type_name = [](auto&& arg) -> std::string {*/
+  struct get_type_name_t {
+    auto operator()(const auto& msg) const -> std::string {
+      auto ui_type_name = ui::msg::get_type_name(msg);
+      if (ui_type_name.has_value()) {
+        return ui_type_name.value();
+      }
+      using T = std::decay_t<decltype(msg)>;
+      if constexpr (std::is_same_v<T, sellitem::msg::types::start_txn_t>) {
+        return "sellitem::start_txn";
+      } else if constexpr (std::is_same_v<T, sellitem::msg::data_t>) {
+        //return "sellitem::msg";
+        return std::format("sellitem::msg (rows: {})",  msg.rows.size());
+      } else if constexpr (std::is_same_v<T, setprice::msg::types::start_txn_t>) {
+        return "setprice::start_txn";
+      } else if constexpr (std::is_same_v<T, setprice::msg::data_t>) {
+        //return "setprice::msg";
+        return std::format("setprice::msg ({})", msg.price);
+      } else if constexpr (std::is_same_v<T, std::monostate>) {
+        return "empty_msg";
+      } else {
+        return "unknown_msg";
+      }
+    }
+  };
 
+  /*
   template<typename Variant>
   inline auto get_type_name(const Variant& var) {
-    auto describe = [&var](auto&& arg) -> std::string {
-      using T = std::decay_t<decltype(arg)>;
-      if constexpr (std::is_same_v<T, sellitem::txn::type_bundle_t::start_txn_t>) {
-        return "sellitem::txn";
-      } else if constexpr (std::is_same_v<T, sellitem::msg::data_t>) {
-        return "sellitem::msg";
-        //auto& msg = std::get<sellitem::msg::data_t>(var);
-        //return std::format("sellitem::msg {} ({})", msg.item_name, msg.price);
-      } else if constexpr (std::is_same_v<T, setprice::txn::type_bundle_t::start_txn_t>) {
-        return "setprice::txn";
-      } else if constexpr (std::is_same_v<T, setprice::msg::data_t>) {
-        auto& msg = std::get<setprice::msg::data_t>(var);
-        return std::format("setprice::msg ({})", msg.price);
-      } else {
-        return "unknown";
-      }
-    };
-    return std::visit(describe, var);
+    return std::visit(fn, var);
   }
+  */
+
+  using type_bundle_t = cope::msg::type_bundle_t<sellitem::msg::types,
+    setprice::msg::types>;
+  using context_t = cope::txn::context_t<type_bundle_t, get_type_name_t>;//decltype(get_type_name)>;
+  using task_t = cope::txn::task_t<context_t>;
 }
 
 namespace sellitem::txn {

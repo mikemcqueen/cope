@@ -6,7 +6,6 @@
 #include "cope_result.h"
 
 namespace sellitem {
-
   namespace msg {
     struct row_data_t {
       std::string item_name;

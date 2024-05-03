@@ -155,7 +155,7 @@ namespace {
       }
     }
     return result;
-  } // namespace (anonymous)
+  }
 
   auto run(app::task_t& task) {
     assert(task.promise().txn_ready());
@@ -167,13 +167,13 @@ namespace {
       auto var = get_data(expected_out_msg_id, extra);
       // TODO: get_data can do this
       std::variant<sellitem::msg::data_t, setprice::msg::data_t,
-                   sellitem::txn::type_bundle_t::start_txn_t> v2;
+                   sellitem::msg::types::start_txn_t> v2;
       using namespace sellitem;
       if (std::holds_alternative<msg::data_t::row_vector>(var)) {
         auto& rows = std::get<msg::data_t::row_vector>(var);
         auto msg = msg::data_t{ std::move(rows) };
         if (!task.promise().txn_running()) {
-          v2 = txn::type_bundle_t::start_txn_t{ std::move(msg), txn::state_t{ "magic beans", 2 } };
+          v2 = msg::types::start_txn_t{ std::move(msg), txn::state_t{ "magic beans", 2 } };
         } else {
           v2 = msg;
         }
@@ -181,7 +181,7 @@ namespace {
         assert(std::holds_alternative<int>(var));
         v2 = setprice::msg::data_t{ std::get<int>(var) };
       }
-      log::info("constructed {}", app::get_type_name(v2));
+      //log::info("constructed {}", app::get_type_name(v2));
       int out_msg_id{};
       std::visit([&task, &out_msg_id](auto&& msg){
         [[maybe_unused]] const auto& out_msg = task.send_msg(std::move(msg));
@@ -208,22 +208,32 @@ int main() {
 #else
   int num_iter{ 100000 };
 #endif
-  using context_t = cope::txn::context_t<sellitem::txn::type_bundle_t, setprice::txn::type_bundle_t>;
-  context_t context{};
+  /*
+  using type_bundle_t = cope::msg::type_bundle_t<
+    sellitem::msg::types, setprice::txn::msg_types>;
+  //using context_t = cope::txn::context_t<sellitem::txn::type_bundle_t, setprice::txn::type_bundle_t>;
+  using context_t = cope::txn::context_t<type_bundle_t>;
+  */
+  app::get_type_name_t get_type_name{};
+  app::context_t context{ get_type_name };
   app::task_t task{ sellitem::txn::handler(context, sellitem::kTxnId) };
   int total_frames{};
-  auto start = high_resolution_clock::now();
+  [[maybe_unused]] auto start = high_resolution_clock::now();
   for (int iter{}; iter < num_iter; ++iter) {
     auto frame_count = run(task);
     total_frames += frame_count;
   }
+#ifdef NDEBUG
   auto end = high_resolution_clock::now();
   auto elapsed = (double)duration_cast<nanoseconds>(end - start).count();
-  std::cerr << num_iter << " iters, " << total_frames << " frames, "
+#endif
+  std::cerr << num_iter << " iters, " << total_frames << " frames"
+#ifdef NDEBUG
             << std::fixed << std::setprecision(2)
-            << "Elapsed: " << elapsed * 1e-6 << "ms "
+            << ", Elapsed: " << elapsed * 1e-6 << "ms "
             << std::setprecision(0)
             << "(" << elapsed / total_frames << "ns/frame)"
+#endif
             << std::endl;
   return 0;
 }

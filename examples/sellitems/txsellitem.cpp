@@ -10,11 +10,14 @@ namespace sellitem::txn {
   using cope::result_code;
   using sellitem::msg::data_t;
   using sellitem::msg::row_data_t;
+
+  //using type_bundle_t = cope::msg::type_bundle_t<sellitem::msg::types, setprice::msg::types>;
+  //using context_type = cope::txn::context_t<type_bundle_t>;
   using context_type = app::context_t;
+  //  using task_t = app::task_t; // = cope::txn::task_t<context_type>;
 
   auto get_row(const context_type& context, size_t row_index,
-    const row_data_t** row)
-  {
+      const row_data_t** row) {
     const data_t& msg = std::get<data_t>(context.in());
     if (row_index >= msg.rows.size()) {
       return result_code::e_fail;
@@ -43,7 +46,7 @@ namespace sellitem::txn {
   }
 
   auto get_candidate_row(const context_type& context,
-    const txn::state_t& state) {
+      const txn::state_t& state) {
     return get_candidate_row(std::get<data_t>(context.in()), state);
   }
 
@@ -54,9 +57,8 @@ namespace sellitem::txn {
   };
 
   auto validate_row(const context_type& context, size_t row_index,
-    const state_t& state, const row_data_t** out_row,
-    const validate_row_options& options) {
-    //
+      const state_t& state, const row_data_t** out_row,
+      const validate_row_options& options) {
     result_code rc = msg::validate(context.in());
     if (rc != result_code::s_ok) return rc;
 
@@ -94,7 +96,7 @@ namespace sellitem::txn {
 
   template<typename Context>
   auto handler(Context& context, cope::txn::id_t /*task_id*/)
-    -> cope::txn::task_t<Context> {
+      -> cope::txn::task_t<Context> {
     using receive_start_txn =
       cope::txn::receive_awaitable<app::task_t, data_t, state_t>;
 
