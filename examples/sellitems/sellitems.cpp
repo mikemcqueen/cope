@@ -14,23 +14,6 @@
 
 using namespace std::literals;
 
-namespace ui {
-  template<typename Variant>
-  auto dispatch(const Variant& var) {
-    using namespace cope;
-    /*
-    using namespace ui::msg;
-    auto id = std::visit(ui::msg::get_id, msg)
-    if ((msg.msg_id < id::kFirst) || (msg.msg_id > id::kLast)) {
-      log::info("dispatch(): unsupported message id, {}", msg.msg_id);
-      return result_code::e_unexpected_msg_id;
-    }
-    */
-    // actual dispatch of message (e.g. to click a button) would go here...
-    return result_code::s_ok;
-  }
-}
-
 namespace {
   namespace log = cope::log;
 
@@ -157,6 +140,18 @@ namespace {
     return result;
   }
 
+  constexpr inline auto dispatch = [](const auto& msg) {
+    using namespace cope;
+    using namespace ui::msg;
+    auto msg_name = get_type_name(msg);
+    if (!msg_name.has_value()) {
+      log::info("dispatch: unsupported message");
+      return result_code::e_unexpected_msg_type;
+    }
+    log::info("dispatching {}...", msg_name.value());
+    return result_code::s_ok;
+  };
+
   auto run(app::task_t& task) {
     assert(task.promise().txn_ready());
     state::reset();
@@ -183,9 +178,12 @@ namespace {
       }
       //log::info("constructed {}", app::get_type_name(v2));
       int out_msg_id{};
-      std::visit([&task, &out_msg_id](auto&& msg){
-        [[maybe_unused]] const auto& out_msg = task.send_msg(std::move(msg));
-        out_msg_id = ui::msg::get_id(out_msg);
+      std::visit([&task, &out_msg_id](auto&& msg) {
+        [[maybe_unused]] const auto& var = task.send_msg(std::move(msg));
+        if (task.promise().txn_running()) {
+          std::visit(dispatch, var);
+        }
+        out_msg_id = ui::msg::get_id(var);
       }, v2);
       //assert(out_msg_id == expected_out_msg_id);
       ++frame_count;
@@ -193,7 +191,6 @@ namespace {
         assert(expected_out_msg_id == -1);
         break;
       }
-      //ui::dispatch(out_msg);
     }
     return frame_count;
   }
@@ -208,12 +205,6 @@ int main() {
 #else
   int num_iter{ 100000 };
 #endif
-  /*
-  using type_bundle_t = cope::msg::type_bundle_t<
-    sellitem::msg::types, setprice::txn::msg_types>;
-  //using context_t = cope::txn::context_t<sellitem::txn::type_bundle_t, setprice::txn::type_bundle_t>;
-  using context_t = cope::txn::context_t<type_bundle_t>;
-  */
   app::get_type_name_t get_type_name{};
   app::context_t context{ get_type_name };
   app::task_t task{ sellitem::txn::handler(context, sellitem::kTxnId) };
