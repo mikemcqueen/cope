@@ -19,7 +19,7 @@ namespace simple {
 
     using state_t = int;
 
-    struct type_bundle_t {
+    struct types {
       // todo: templated type bundle that takes startMsgT, stateT, in=startMsgT, out=monostate
       using start_txn_t = cope::msg::start_txn_t<in_msg_t, state_t>;
       using in_tuple_t = std::tuple<start_txn_t, in_msg_t>;
@@ -49,7 +49,7 @@ namespace simple {
       auto start = high_resolution_clock::now();
       in_msg_t msg{ .value{1} };
       for (int iter{}; iter < num_iter; ++iter) {
-        using start_txn_t = type_bundle_t::start_txn_t;
+        using start_txn_t = types::start_txn_t;
         auto txn_start = start_txn_t{ std::move(msg), state_t{iter} };
         [[maybe_unused]] const auto& r = task.send_msg(std::move(txn_start));
       }
@@ -86,7 +86,8 @@ int main() {
 
   try {
     double elapsed{};
-    using context_t = cope::txn::context_t<txn::type_bundle_t>;
+    using type_bundle_t = cope::msg::type_bundle_t<simple::txn::types>;
+    using context_t = cope::txn::context_t<type_bundle_t>;
     using task_t = cope::txn::task_t<context_t>;
 
     context_t context{};

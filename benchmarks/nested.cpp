@@ -23,14 +23,14 @@ namespace nested {
 
   namespace inner {
     using state_t = int;
-    struct type_bundle_t {
+    struct types {
       using start_txn_t = cope::msg::start_txn_t<in_msg_t, state_t>;
       using in_tuple_t = std::tuple<start_txn_t, in_msg_t, outer::in_msg_t>;
       using out_tuple_t = std::tuple<out_msg_t>;
     };
 
-    template</*typename FromTaskT, */typename TaskT>
-    using start_awaitable = cope::txn::start_awaitable</*FromTaskT, */TaskT, in_msg_t, state_t>;
+    template<typename TaskT>
+    using start_awaitable = cope::txn::start_awaitable<TaskT, in_msg_t, state_t>;
 
     template<typename ContextT>
     auto handler([[maybe_unused]] ContextT& context,
@@ -38,7 +38,8 @@ namespace nested {
       -> cope::txn::task_t<ContextT>
     {
       using task_t = cope::txn::task_t<ContextT>;
-      using receive_start_txn = cope::txn::receive_awaitable<task_t, in_msg_t, state_t>;
+      using receive_start_txn = cope::txn::receive_awaitable<task_t, in_msg_t,
+        state_t>;
 
       state_t state;
 
@@ -53,8 +54,7 @@ namespace nested {
         }
         if (!promise.context().result().succeeded()) {
           cope::log::info("  inner: completing with error {}", promise.context().result().code);
-        }
-        else {
+        } else {
           cope::log::info("  inner: completing");
         }
         task_t::complete_txn(promise);
@@ -64,19 +64,20 @@ namespace nested {
 
   namespace outer {
     using state_t = int;
-    struct type_bundle_t {
+    struct types {
       using start_txn_t = cope::msg::start_txn_t<in_msg_t, state_t>;
       using in_tuple_t = std::tuple<start_txn_t, in_msg_t, inner::in_msg_t>;
       using out_tuple_t = std::tuple<out_msg_t>;
     };
 
-    using context_type = cope::txn::context_t<type_bundle_t>;
-    using task_type = cope::txn::task_t<context_type>;
+    //using context_type = cope::txn::context_t<type_bundle_t>;
+    //using task_type = cope::txn::task_t<context_type>;
 
     template<typename TaskT>
     inline auto start_inner(const TaskT& task, inner::in_msg_t&& msg) {
       auto inner_state = inner::state_t{ 1 };
-      return inner::start_awaitable<TaskT>{ task.handle(), std::move(msg), inner_state };
+      return inner::start_awaitable<TaskT>{ task.handle(), std::move(msg),
+        inner_state };
     }
 
     template<typename ContextT>
@@ -84,7 +85,8 @@ namespace nested {
       -> cope::txn::task_t<ContextT>
     {
       using task_t = cope::txn::task_t<ContextT>;
-      using receive_start_txn = cope::txn::receive_awaitable<task_t, in_msg_t, state_t>;
+      using receive_start_txn = cope::txn::receive_awaitable<task_t, in_msg_t,
+        state_t>;
 
       auto inner_task{ inner::handler(context, kInnerTxnId) };
       state_t state;
@@ -106,7 +108,8 @@ namespace nested {
           }
         }
         if (!promise.context().result().succeeded()) {
-          cope::log::info("  outer: completing with error {}", promise.context().result().code);
+          cope::log::info("  outer: completing with error {}",
+            promise.context().result().code);
         } else {
           cope::log::info("  outer: completing");
         }
@@ -123,7 +126,7 @@ namespace nested {
       for (int iter{}; iter < num_iter; ++iter) {
         // if no txn running, wrap msg in a start_t msg
         if (!task.promise().txn_running()) {
-          using start_txn_t = outer::type_bundle_t::start_txn_t;
+          using start_txn_t = outer::types::start_txn_t;
           auto txn_start = start_txn_t{ std::move(outer_msg), state_t{iter} };
           cope::log::info("sending outer start_txn msg, iter {}", iter);
           [[maybe_unused]] auto& out = task.send_msg(std::move(txn_start));
@@ -171,11 +174,12 @@ int main() {
 #endif
 
   double elapsed;
-  using context_t = cope::txn::context_t<inner::type_bundle_t, outer::type_bundle_t>;
+  using type_bundle_t = cope::msg::type_bundle_t<inner::types, outer::types>;
+  using context_t = cope::txn::context_t<type_bundle_t>;
   using task_t = cope::txn::task_t<context_t>;
 
-  context_t txn_context{};
-  task_t task{ outer::handler(txn_context, kOuterTxnId) };
+  context_t context{};
+  task_t task{ outer::handler(context, kOuterTxnId) };
   elapsed = outer::run(task, num_iter);
   log_result("nested", num_iter, elapsed);
 }
