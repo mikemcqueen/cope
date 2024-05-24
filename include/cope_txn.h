@@ -177,7 +177,7 @@ namespace cope::txn {
   // TODO: requires bundle declare: in_msg_type, out_msg_type, ??
   class context_t {
   public:
-    // NB: msg_type aliases MUST be declard BEFORE task_type
+    // NB: msg_type aliases MUST be declared BEFORE task_type
     using in_msg_type = TypeBundleT::in_msg_type;
     using out_msg_type = TypeBundleT::out_msg_type;
     using context_type = context_t<TypeBundleT, MsgNameFnT>;
@@ -259,19 +259,20 @@ namespace cope::txn {
       log::info("task_id:{} receive_awaitable::await_resume()",
         this->promise().txn_id());
       auto& txn = this->promise().context().in();
+      /* TODO: start_txn validation
       // validate this is a start_txn message for the expected txn_id
-      //this->promise().set_result(start_t::validate(txn, txn_id_));
-      if (this->promise().context().result().failed()) {
+      if (this->promise().context().set_result(start_t::validate(txn, txn_id_)
+        .failed()) {
         log::info("task_id:{} ERROR resuming: {}", this->promise().txn_id(),
           this->promise().context().result().code);
-        // TODO: error handling
-        return this->promise();
+        return this->promise(); // TODO: error handling
       }
+      */
       auto& txn_start = std::get<start_txn_t>(txn);
       // move initial state into coroutine frame
       state_ = std::move(txn_start.state);
       // move msg from incoming txn to context.in
-      // TODO: this is a little awkward
+      // this is a little awkward
       auto msg{ std::move(txn_start.msg) };
       this->promise().context().in() = std::move(msg);
       this->promise().set_txn_state(state::running);

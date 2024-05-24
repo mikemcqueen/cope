@@ -160,7 +160,7 @@ namespace {
       cope::msg::id_t expected_out_msg_id;
       std::string extra;
       auto var = get_data(expected_out_msg_id, extra);
-      // TODO: get_data can do this
+      // TODO get_data can do this
       std::variant<sellitem::msg::data_t, setprice::msg::data_t,
                    sellitem::msg::types::start_txn_t> v2;
       using namespace sellitem;
@@ -198,7 +198,6 @@ namespace {
 
 int main() {
   using namespace std::chrono;
-
 #ifndef NDEBUG
   cope::log::enable();
   int num_iter{ 1 };

@@ -47,13 +47,16 @@ namespace nested {
         auto& promise = co_await receive_start_txn{ state };
         cope::log::info("  inner: received start_txn");
         while (!promise.context().result().unexpected()) {
+          cope::log::info("  inner: yielding...");
           co_yield out_msg_t{ 3 };
+          cope::log::info("  inner: resumed");
           if (std::holds_alternative<outer::in_msg_t>(promise.context().in())) {
             break;
           }
         }
         if (!promise.context().result().succeeded()) {
-          cope::log::info("  inner: completing with error {}", promise.context().result().code);
+          cope::log::info("  inner: completing with error {}",
+            promise.context().result().code);
         } else {
           cope::log::info("  inner: completing");
         }
@@ -130,12 +133,10 @@ namespace nested {
           auto txn_start = start_txn_t{ std::move(outer_msg), state_t{iter} };
           cope::log::info("sending outer start_txn msg, iter {}", iter);
           [[maybe_unused]] auto& out = task.send_msg(std::move(txn_start));
-        }
-        else if (!((iter + 1) % 2)) {
+        } else if (!((iter + 1) % 2)) {
           cope::log::info("sending inner_msg, iter {}", iter);
           [[maybe_unused]] auto& out = task.send_msg(std::move(inner_msg));
-        }
-        else {
+        } else {
           cope::log::info("sending outer_msg, iter {}", iter);
           [[maybe_unused]] auto& out = task.send_msg(std::move(outer_msg));
         }
