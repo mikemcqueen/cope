@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+#include <string_view>
 #include <tuple>
 #include "cope.h"
 #include "sellitem_msg.h"
@@ -9,11 +11,32 @@
 namespace sellitem {
   constexpr auto kTxnId{ cope::txn::make_id(1) };
 
+  enum class action : int {
+    select_row,
+    set_price,
+    list_item
+  };
+
   namespace txn {
     struct state_t {
       std::string item_name;
       int item_price;
+
+      std::optional<int> row_idx;
+      std::optional<action> next_action;
+      std::optional<cope::operation> next_operation;
     }; // sellitem::txn::state_t
+
+    inline constexpr auto make_state(const std::string& item_name,
+        int item_price) {
+      return state_t{
+        item_name,
+        item_price,
+        std::nullopt,     // row_idx
+        std::nullopt,     // next_action
+        std::nullopt      // next_operation
+      };
+    }
 
     template<typename ContextT>
     auto handler(ContextT&, cope::txn::id_t) -> cope::txn::task_t<ContextT>;

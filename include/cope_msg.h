@@ -5,9 +5,15 @@
 
 #include "tuple.h"
 
-using namespace std::literals;
+//using namespace std::literals;
 
 namespace cope {
+  enum class operation : int {
+    yield,
+    await,
+    complete
+  };
+
   namespace msg {
     using id_t = int; // HACK TODO
 
@@ -30,7 +36,6 @@ namespace cope {
       using out_msg_type = tuple::to_variant_t<out_tuple_type>;
     }; // type_bundle_t
   } // namespace msg
-
 } // namespace cope
 
 #endif // INCLUDE_COPE_MSG_H

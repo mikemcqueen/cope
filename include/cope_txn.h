@@ -20,7 +20,7 @@ namespace cope::txn {
   inline constexpr auto make_id(int id) noexcept { return static_cast<id_t>(id); }
 
   enum class state : int {
-    ready = 0,
+    ready,
     running,
     complete
   };
@@ -210,7 +210,7 @@ namespace cope::txn {
 
   private:
     handle_type active_handle_{};
-    result_t result_;
+    result_t result_{result_code::s_ok};
     in_msg_type in_;
     out_msg_type out_;
     MsgNameFnT& msg_name_fn_;

@@ -168,7 +168,9 @@ namespace {
         auto& rows = std::get<msg::data_t::row_vector>(var);
         auto msg = msg::data_t{ std::move(rows) };
         if (!task.promise().txn_running()) {
-          v2 = msg::types::start_txn_t{ std::move(msg), txn::state_t{ "magic beans", 2 } };
+          // todo: 2-param constructor?  check c++ is trivial cppnow jason turner 2024
+          auto state = txn::make_state("magic beans"s, 2);
+          v2 = msg::types::start_txn_t{ std::move(msg), std::move(state) };
         } else {
           v2 = msg;
         }

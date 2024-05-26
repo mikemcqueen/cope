@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <optional>
@@ -31,7 +32,7 @@ namespace sellitem {
     }; // sellitem::msg::data_t
 
     template<typename Msg>
-    inline auto validate(const Msg& msg) {
+    inline cope::result_t validate(const Msg& msg) {
       // TODO: use cope::msg::validate<data_t>(msg)
       using namespace cope;
       return std::holds_alternative<data_t>(msg) ?

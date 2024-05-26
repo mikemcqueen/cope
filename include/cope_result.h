@@ -30,6 +30,11 @@ namespace cope {
     auto failed() const { return cope::failed(code); }
     auto unexpected() const { return cope::unexpected(code); }
 
+    result_t() = delete;
+    result_t(result_code rc) : code(rc) {}
+
+    operator result_code() const { return code; }
+
     result_code code = result_code::s_ok;
   };
 } // namespace cope::result
