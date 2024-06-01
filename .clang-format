@@ -128,7 +128,7 @@ KeepEmptyLinesAtTheStartOfBlocks: true
 # Maximum number of consecutive blank lines
 MaxEmptyLinesToKeep: 1
 # Namespace indentation: None, Inner (indent the content in the nested namespace), All
-NamespaceIndentation: Inner
+NamespaceIndentation: All
 # Penalty that wraps the function call after call(
 PenaltyBreakBeforeFirstCallParameter: 19
 # Introduce a penalty for line breaks in a comment
