@@ -48,10 +48,10 @@ namespace setprice::txn {
 
   template<typename ContextT>
   auto handler(ContextT& /*context*/, cope::txn::id_t /*task_id*/)
-    -> cope::txn::task_t<ContextT>
+    -> task_t<ContextT>
   {
-    using task_t = cope::txn::task_t<ContextT>;
-    using receive_start_txn = cope::txn::receive_awaitable<task_t, msg::data_t, state_t>;
+    using task_type = task_t<ContextT>;
+    using receive_start_txn = cope::txn::receive_awaitable<task_type, msg::data_t, state_t>;
 
     state_t state;
 
@@ -70,9 +70,10 @@ namespace setprice::txn {
         error(validate_complete(context, 0/*state.prev_msg_id*/));
         break;
       }
-      task_t::complete_txn(promise);
+      task_type::complete_txn(promise);
     }
   }
 
-  template auto handler<app::context_t>(app::context_t&, cope::txn::id_t) -> app::task_t;
+  template auto handler<app::context_t>(app::context_t&, cope::txn::id_t)
+      -> task_t<app::context_t>;
 } // namespace setprice::txn

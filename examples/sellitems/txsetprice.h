@@ -30,24 +30,27 @@ namespace setprice {
         std::move(state) };
     }
 
+    template <typename ContextT>
+    using task_t = cope::txn::task_t<msg::data_t, state_t, ContextT>;
+
     template<typename ContextT>
-    auto handler(ContextT&, cope::txn::id_t) -> cope::txn::task_t<ContextT>;
+    auto handler(ContextT&, cope::txn::id_t) -> task_t<ContextT>;
   } // namespace txn
 
   namespace msg {
     using in_types = std::tuple<setprice::msg::data_t, sellitem::msg::data_t>;
-    using out_types = std::tuple<ui::msg::click_widget::data_t,
-      ui::msg::send_chars::data_t>;
+    using out_types =
+        std::tuple<ui::msg::click_widget::data_t, ui::msg::send_chars::data_t>;
+    using start_txn_t =
+        cope::msg::start_txn_t<setprice::msg::data_t, setprice::txn::state_t>;
 
     struct types {
-      using start_txn_t = cope::msg::start_txn_t<setprice::msg::data_t,
-        setprice::txn::state_t>;
       // TODO: tuple::concat_t<start, in_types>
       using in_tuple_t = std::tuple<start_txn_t, setprice::msg::data_t,
         sellitem::msg::data_t>;
       using out_tuple_t = setprice::msg::out_types;
     }; // setprice::msg::types
-  } // namespace msg
+  }  // namespace msg
 } // namespace setprice
 
 #endif // INCLUDE_TXSETPRICE_H

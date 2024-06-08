@@ -145,34 +145,76 @@ namespace sellitem::txn {
     }
   }
 
-  template<typename Context>
-  auto handler(Context& context, cope::txn::id_t /*task_id*/)
-      -> cope::txn::task_t<Context> {
-    using receive_start_txn =
-      cope::txn::receive_awaitable<app::task_t, data_t, state_t>;
+  struct test_t {
 
-    auto setprice_task{ setprice::txn::handler(context, setprice::kTxnId) };
+    using start_awaiter =
+        cope::txn::start_awaitable<setprice::txn::task_t<app::context_t>,
+            setprice::msg::data_t, setprice::txn::state_t>;
+
+    test_t(app::context_t& context)
+        : setprice_task(setprice::txn::handler(context, setprice::kTxnId)) {}
+
+    start_awaiter get_awaiter(
+        app::context_t& context, const sellitem::txn::state_t& state) {
+      auto& setprice_msg = std::get<setprice::msg::data_t>(context.in());
+      return setprice::txn::start(
+          setprice_task, std::move(setprice_msg), state.item_price);
+    }
+
+    setprice::txn::task_t<app::context_t>
+        setprice_task; /*{setprice::txn::handler(context,
+                          setprice::kTxnId)};*/
+  };
+
+  /*
+  template <>
+  cope::txn::start_awaitable<setprice::txn::task_t<app::context_t>,
+      setprice::msg::data_t, setprice::txn::state_t>
+  //  setprice::txn::task_t<app::context_t>
+  test_t::get_awaiter<sellitem::txn::state_t,
+      cope::txn::start_awaitable<setprice::txn::task_t<app::context_t>,
+          setprice::msg::data_t, setprice::txn::state_t>>(
+      //      setprice::txn::task_t<app::context_t>>(
+      app::context_t& context, const sellitem::txn::state_t& state) {
+    auto& setprice_msg = std::get<setprice::msg::data_t>(context.in());
+    return setprice::txn::start(
+        setprice_task, std::move(setprice_msg), state.item_price);
+        }*/
+
+  template <typename ContextT>
+  auto handler(ContextT& context, cope::txn::id_t /*task_id*/)
+      -> task_t<ContextT> {
+    using task_type = task_t<ContextT>;
+    using receive_start_txn =
+        cope::txn::receive_awaitable<task_type, data_t, state_t>;
+
+    // auto setprice_task{setprice::txn::handler(context, setprice::kTxnId)};
     state_t state;
+    test_t test(context);
 
     while (true) {
-      auto& promise = co_await receive_start_txn{ state };
+      auto& promise = co_await receive_start_txn{state};
       auto& context = promise.context();
       const auto error = [&context](result_code rc) {
         return context.set_result(rc).failed();
       };
 
       while (!context.result().unexpected()) {
-        //if (error(msg::validate(context.in()))) break;
+        // if (error(msg::validate(context.in()))) break;
         if (error(update_state(context, state))) break;
         using namespace cope;
         if (state.next_operation == operation::yield) {
           co_yield get_next_action_msg(state);
         } else if (state.next_operation == operation::await) {
+          co_await test.get_awaiter(context, state);
+          /*
           auto& setprice_msg = std::get<setprice::msg::data_t>(context.in());
-          co_await setprice::txn::start(setprice_task, std::move(setprice_msg),
-            state.item_price);
+          co_await setprice::txn::start(
+              setprice_task, std::move(setprice_msg), state.item_price);
+          */
+
         } else {
-          break; // operation::complete
+          break;  // operation::complete
         }
 
         /*
@@ -187,10 +229,10 @@ namespace sellitem::txn {
           if (error(setprice::msg::validate(context.in()))) continue;
 
           auto& setprice_msg = std::get<setprice::msg::data_t>(context.in());
-          co_await setprice::txn::start(setprice_task, std::move(setprice_msg),
-            state.item_price);
-          if (error(validate_row(context, row_index, state, &row,
-            { .selected{true}, .price{true} }))) continue;
+          co_await setprice::txn::start(setprice_task,
+        std::move(setprice_msg), state.item_price); if
+        (error(validate_row(context, row_index, state, &row, {
+        .selected{true}, .price{true} }))) continue;
         }
 
         if (!row->item_listed) {
@@ -200,10 +242,10 @@ namespace sellitem::txn {
         }
         */
       }
-      app::task_t::complete_txn(promise);
+      task_type::complete_txn(promise);
     }
   }
 
   template auto handler<context_type>(context_type&, cope::txn::id_t)
-    -> app::task_t;
+      -> task_t<context_type>;
 } // namespace sellitem::txn

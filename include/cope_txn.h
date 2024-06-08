@@ -108,7 +108,7 @@ namespace cope::txn {
       }
       void return_void() { throw std::runtime_error("co_return not allowed"); }
 
-      yield_awaiter yield_value([[maybe_unused]] out_msg_type&& msg) {
+      yield_awaiter yield_value(out_msg_type&& msg) {
         log::info("task_id:{} yielding {}", txn_id(), context().msg_name(msg));
         context().out() = std::move(msg);
         return {};
@@ -137,16 +137,20 @@ namespace cope::txn {
       status txn_status_{status::ready};
       std::optional<handle_type> prev_handle_;
     }; // promise_type
+
+    inline constexpr auto default_msg_name_fn = [](const auto&) -> std::string {
+      return "msg";
+    };
   }  // namespace detail
 
   // txn::task_t
-  template<Context ContextT>
+  template<class MsgT, class StateT, Context ContextT>
   struct task_t {
   public:
     using context_type = ContextT;
     using out_msg_type = context_type::out_msg_type;
     using promise_type = detail::promise<context_type>;
-    using task_type = task_t<context_type>;
+    using task_type = task_t<MsgT, StateT, context_type>;
     using handle_type = std::coroutine_handle<promise_type>;
 
     task_t() = delete;
@@ -165,9 +169,9 @@ namespace cope::txn {
     context_type& context() { return promise().context(); }
     const context_type& context() const { return promise().context(); }
 
-    template<typename MsgT>
+    template<typename T>
     // TODO: requires in_tuple_type contains Msg
-    [[nodiscard]] decltype(auto) send_msg(MsgT&& msg) {
+    [[nodiscard]] decltype(auto) send_msg(T&& msg) {
       //validate_send_msg<(msg);
       context().in() = std::move(msg);
       log::info("sending {} to task_id:{}",
@@ -205,25 +209,18 @@ namespace cope::txn {
     handle_type coro_handle_;
   }; // txn::task_t
 
-  inline constexpr auto default_msg_name_fn = [](const auto&)
-    -> std::string {
-    return "msg";
-  };
-
   // txn::context_t
   template <typename TypeBundleT,
-      typename MsgNameFnT = decltype(default_msg_name_fn)>
+      typename MsgNameFnT = decltype(detail::default_msg_name_fn)>
   struct context_t {
   public:
-    // NB: msg_type aliases MUST be declared BEFORE task_type
     using in_msg_type = TypeBundleT::in_msg_type;
     using out_msg_type = TypeBundleT::out_msg_type;
     using context_type = context_t<TypeBundleT, MsgNameFnT>;
     using promise_type = detail::promise<context_type>;
-    using task_type = task_t<context_type>;
     using handle_type = std::coroutine_handle<promise_type>;
 
-    context_t(MsgNameFnT& msg_name_fn = default_msg_name_fn)
+    context_t(MsgNameFnT& msg_name_fn = detail::default_msg_name_fn)
       : msg_name_fn_(msg_name_fn) {}
 
     auto active_handle() const { return active_handle_; }

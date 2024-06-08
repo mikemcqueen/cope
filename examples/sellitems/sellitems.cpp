@@ -152,7 +152,7 @@ namespace {
     return result_code::s_ok;
   };
 
-  auto run(app::task_t& task) {
+  auto run(sellitem::txn::task_t<app::context_t>& task) {
     assert(task.promise().txn_ready());
     state::reset();
     int frame_count{};
@@ -162,7 +162,7 @@ namespace {
       auto var = get_data(expected_out_msg_id, extra);
       // TODO get_data can do this
       std::variant<sellitem::msg::data_t, setprice::msg::data_t,
-                   sellitem::msg::types::start_txn_t> v2;
+          sellitem::msg::start_txn_t> v2;
       using namespace sellitem;
       if (std::holds_alternative<msg::data_t::row_vector>(var)) {
         auto& rows = std::get<msg::data_t::row_vector>(var);
@@ -170,7 +170,7 @@ namespace {
         if (!task.promise().txn_running()) {
           // todo: 2-param constructor?  check c++ is trivial cppnow jason turner 2024
           auto state = txn::make_state("magic beans"s, 2);
-          v2 = msg::types::start_txn_t{ std::move(msg), std::move(state) };
+          v2 = msg::start_txn_t{ std::move(msg), std::move(state) };
         } else {
           v2 = msg;
         }
@@ -208,7 +208,8 @@ int main() {
 #endif
   app::get_type_name_t get_type_name{};
   app::context_t context{ get_type_name };
-  app::task_t task{ sellitem::txn::handler(context, sellitem::kTxnId) };
+  sellitem::txn::task_t<app::context_t> task{
+      sellitem::txn::handler<app::context_t>(context, sellitem::kTxnId)};
   int total_frames{};
   [[maybe_unused]] auto start = high_resolution_clock::now();
   for (int iter{}; iter < num_iter; ++iter) {
