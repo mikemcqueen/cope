@@ -33,12 +33,14 @@ namespace sellitem {
           item_name, item_price, std::nullopt, std::nullopt, std::nullopt};
     }
 
+    cope::result_t update_state(const msg::data_t& msg, state_t& state);
+
     template <typename ContextT>
     using task_t = cope::txn::task_t<msg::data_t, state_t, ContextT>;
 
     template <typename ContextT>
     auto handler(ContextT&, cope::txn::id_t) -> task_t<ContextT>;
-  } // namespace txn
+  }  // namespace txn
 
   namespace msg {
     /*

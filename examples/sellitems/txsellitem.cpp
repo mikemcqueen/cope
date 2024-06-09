@@ -1,7 +1,7 @@
 #include "msvc_wall.h"
-#include <optional>
 #include "handlers.h"
 #include "ui_msg.h"
+#include "sellitem_coord.h"
 #include "internal/cope_log.h"
 
 namespace sellitem::txn {
@@ -45,6 +45,7 @@ namespace sellitem::txn {
     throw new std::runtime_error("get_row_state()");
   }
 
+  /*
   auto get_next_operation(const state_t& state) {
     using namespace cope;
     switch (state.next_action.value()) {
@@ -56,8 +57,9 @@ namespace sellitem::txn {
     default: throw new std::runtime_error("invalid next_action");
     }
   }
+  */
 
-  auto update_sellitem_state(const data_t& msg, state_t& state) {
+  cope::result_t update_state(const data_t& msg, state_t& state) {
     for (size_t row_idx{}; row_idx < msg.rows.size(); ++row_idx) {
       const auto& row = msg.rows.at(row_idx);
       if (is_candidate_row(row, state)) {
@@ -71,17 +73,43 @@ namespace sellitem::txn {
         return result_code::s_ok;
       }
     }
-    log::info("ERROR: row: none");
-    return result_code::e_fail;
+    log::info("row: none");
+    state.next_operation = cope::operation::complete;
+    return result_code::s_ok;
   }
 
-  auto update_state(const context_type& context, state_t& state) {
+  cope::result_t update_state(const context_type& context, state_t& state) {
     if (std::holds_alternative<sellitem::msg::data_t>(context.in())) {
-      return update_sellitem_state(std::get<data_t>(context.in()), state);
+      return update_state(std::get<data_t>(context.in()), state);
     }
-    // setprice::msg
+    // setprice::msg -> await setprice::start_txn
     state.next_operation = cope::operation::await;
     return result_code::s_ok;
+  }
+
+  // maybe: namespace ui
+  auto click_table_row(int row_index) {
+    log::info("constructing click_table_row ({})", row_index);
+    return ui::msg::click_table_row::data_t{ row_index };
+  }
+
+  auto click_setprice_button() {
+    log::info("constructing click_setprice_button");
+    return ui::msg::click_widget::data_t{ 1 };
+  }
+
+  auto click_listitem_button() {
+    log::info("constructing click_listitem_button");
+    return ui::msg::click_widget::data_t{ 2 };
+  }
+
+  app::context_t::out_msg_type get_next_action_msg(const state_t& state) {
+    switch (state.next_action.value()) {
+    case action::select_row: return click_table_row(state.row_idx.value());
+    case action::set_price: return click_setprice_button();
+    case action::list_item: return click_listitem_button();
+    default: throw new std::runtime_error("invalid action");
+    }
   }
 
   /*
@@ -121,126 +149,35 @@ namespace sellitem::txn {
   }
   */
 
-  auto click_table_row(int row_index) {
-    log::info("constructing click_table_row ({})", row_index);
-    return ui::msg::click_table_row::data_t{ row_index };
-  }
-
-  auto click_setprice_button() {
-    log::info("constructing click_setprice_button");
-    return ui::msg::click_widget::data_t{ 1 };
-  }
-
-  auto click_listitem_button() {
-    log::info("constructing click_listitem_button");
-    return ui::msg::click_widget::data_t{ 2 };
-  }
-
-  app::context_t::out_msg_type get_next_action_msg(const state_t& state) {
-    switch (state.next_action.value()) {
-    case action::select_row: return click_table_row(state.row_idx.value());
-    case action::set_price:  return click_setprice_button();
-    case action::list_item:  return click_listitem_button();
-    default: throw new std::runtime_error("invalid action");
-    }
-  }
-
-  struct test_t {
-
-    using start_awaiter =
-        cope::txn::start_awaitable<setprice::txn::task_t<app::context_t>,
-            setprice::msg::data_t, setprice::txn::state_t>;
-
-    test_t(app::context_t& context)
-        : setprice_task(setprice::txn::handler(context, setprice::kTxnId)) {}
-
-    start_awaiter get_awaiter(
-        app::context_t& context, const sellitem::txn::state_t& state) {
-      auto& setprice_msg = std::get<setprice::msg::data_t>(context.in());
-      return setprice::txn::start(
-          setprice_task, std::move(setprice_msg), state.item_price);
-    }
-
-    setprice::txn::task_t<app::context_t>
-        setprice_task; /*{setprice::txn::handler(context,
-                          setprice::kTxnId)};*/
-  };
-
-  /*
-  template <>
-  cope::txn::start_awaitable<setprice::txn::task_t<app::context_t>,
-      setprice::msg::data_t, setprice::txn::state_t>
-  //  setprice::txn::task_t<app::context_t>
-  test_t::get_awaiter<sellitem::txn::state_t,
-      cope::txn::start_awaitable<setprice::txn::task_t<app::context_t>,
-          setprice::msg::data_t, setprice::txn::state_t>>(
-      //      setprice::txn::task_t<app::context_t>>(
-      app::context_t& context, const sellitem::txn::state_t& state) {
-    auto& setprice_msg = std::get<setprice::msg::data_t>(context.in());
-    return setprice::txn::start(
-        setprice_task, std::move(setprice_msg), state.item_price);
-        }*/
 
   template <typename ContextT>
   auto handler(ContextT& context, cope::txn::id_t /*task_id*/)
       -> task_t<ContextT> {
     using task_type = task_t<ContextT>;
-    using receive_start_txn =
-        cope::txn::receive_awaitable<task_type, data_t, state_t>;
-
-    // auto setprice_task{setprice::txn::handler(context, setprice::kTxnId)};
     state_t state;
-    test_t test(context);
+    coordinator_t test(context);
 
     while (true) {
-      auto& promise = co_await receive_start_txn{state};
+      auto& promise = co_await test.receive_start_txn(context, state);
       auto& context = promise.context();
       const auto error = [&context](result_code rc) {
         return context.set_result(rc).failed();
       };
 
       while (!context.result().unexpected()) {
+        // TODO: ?
         // if (error(msg::validate(context.in()))) break;
         if (error(update_state(context, state))) break;
-        using namespace cope;
+        using cope::operation;
         if (state.next_operation == operation::yield) {
           co_yield get_next_action_msg(state);
         } else if (state.next_operation == operation::await) {
-          co_await test.get_awaiter(context, state);
-          /*
-          auto& setprice_msg = std::get<setprice::msg::data_t>(context.in());
-          co_await setprice::txn::start(
-              setprice_task, std::move(setprice_msg), state.item_price);
-          */
-
+          std::tuple_element<0, coordinator_t::awaiter_types>::type awaiter;
+          test.get_awaiter(context, state, awaiter);
+          co_await awaiter;
         } else {
           break;  // operation::complete
         }
-
-        /*
-        if (!row->selected) {
-          co_yield click_table_row(row_index);
-          if (error(validate_row(context, row_index, state, &row,
-            { .selected{true} }))) continue;
-        }
-
-        if (row->item_price != state.item_price) {
-          co_yield click_setprice_button();
-          if (error(setprice::msg::validate(context.in()))) continue;
-
-          auto& setprice_msg = std::get<setprice::msg::data_t>(context.in());
-          co_await setprice::txn::start(setprice_task,
-        std::move(setprice_msg), state.item_price); if
-        (error(validate_row(context, row_index, state, &row, {
-        .selected{true}, .price{true} }))) continue;
-        }
-
-        if (!row->item_listed) {
-          co_yield click_listitem_button();
-          if (error(validate_row(context, row_index, state, &row,
-            { .selected{true}, .price{true}, .listed{true} }))) continue;
-        }
-        */
       }
       task_type::complete_txn(promise);
     }

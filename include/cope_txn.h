@@ -233,7 +233,7 @@ namespace cope::txn {
     auto result() const { return result_; }
     auto set_result(result_code rc) { result_.code = rc; return result_; }
 
-    const auto& in() const { return in_; }
+    constexpr auto& in() const { return in_; }
     auto& in() { return in_; }
     const auto& out() const { return out_; }
     auto& out() { return out_; }
@@ -340,7 +340,7 @@ namespace cope::txn {
     using start_txn_t = msg::start_txn_t<MsgT, StateT>;
 
   public:
-    start_awaitable() = delete;
+    start_awaitable() = default; // delete;
     // TODO: rvalue ref msg & state
     start_awaitable(handle_type dst_handle, MsgT msg, StateT state)
         : dst_handle_(dst_handle), msg_(std::move(msg)),

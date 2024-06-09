@@ -30,6 +30,7 @@ namespace setprice {
         std::move(state) };
     }
 
+    // task type
     template <typename ContextT>
     using task_t = cope::txn::task_t<msg::data_t, state_t, ContextT>;
 
