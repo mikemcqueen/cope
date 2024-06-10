@@ -1,3 +1,4 @@
+// sellitem_msg.h
 
 #pragma once
 
@@ -34,7 +35,7 @@ namespace sellitem {
     template<typename Msg>
     inline cope::result_t validate(const Msg& msg) {
       // TODO: use cope::msg::validate<data_t>(msg)
-      using namespace cope;
+      using cope::result_code;
       return std::holds_alternative<data_t>(msg) ?
         result_code::s_ok : result_code::e_unexpected_msg_type;
     }

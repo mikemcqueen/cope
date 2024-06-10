@@ -103,6 +103,8 @@ namespace sellitem::txn {
     return ui::msg::click_widget::data_t{ 2 };
   }
 
+  /*app::context_t::out_msg_type*/
+  template <>
   app::context_t::out_msg_type get_next_action_msg(const state_t& state) {
     switch (state.next_action.value()) {
     case action::select_row: return click_table_row(state.row_idx.value());
@@ -149,13 +151,14 @@ namespace sellitem::txn {
   }
   */
 
-
-  template <typename ContextT>
+  template <typename ContextT, typename CoordinatorT>
   auto handler(ContextT& context, cope::txn::id_t /*task_id*/)
       -> task_t<ContextT> {
+    //    using yield_msg_type = ContextT::out_msg_type;
     using task_type = task_t<ContextT>;
+    // using coordinator_type =
     state_t state;
-    coordinator_t test(context);
+    CoordinatorT test(context);
 
     while (true) {
       auto& promise = co_await test.receive_start_txn(context, state);
@@ -170,9 +173,9 @@ namespace sellitem::txn {
         if (error(update_state(context, state))) break;
         using cope::operation;
         if (state.next_operation == operation::yield) {
-          co_yield get_next_action_msg(state);
+          co_yield test.get_next_action_msg(state);
         } else if (state.next_operation == operation::await) {
-          std::tuple_element<0, coordinator_t::awaiter_types>::type awaiter;
+          typename std::tuple_element<0, typename CoordinatorT::awaiter_types>::type awaiter;
           test.get_awaiter(context, state, awaiter);
           co_await awaiter;
         } else {
@@ -183,6 +186,6 @@ namespace sellitem::txn {
     }
   }
 
-  template auto handler<context_type>(context_type&, cope::txn::id_t)
-      -> task_t<context_type>;
+  template auto handler<context_type, coordinator_type>(context_type&, cope::txn::id_t)
+    -> task_type;
 } // namespace sellitem::txn

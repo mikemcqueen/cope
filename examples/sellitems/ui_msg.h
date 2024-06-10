@@ -1,5 +1,7 @@
 // ui_msg.h
 
+#pragma once
+
 #ifndef INCLUDE_UI_MSG_H
 #define INCLUDE_UI_MSG_H
 

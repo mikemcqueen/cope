@@ -9,6 +9,7 @@
 #include <variant>
 #include "cope.h"
 #include "handlers.h"
+#include "sellitem_coord.h"
 #include "ui_msg.h"
 #include "internal/cope_log.h"
 
@@ -208,8 +209,10 @@ int main() {
 #endif
   app::get_type_name_t get_type_name{};
   app::context_t context{ get_type_name };
-  sellitem::txn::task_t<app::context_t> task{
-      sellitem::txn::handler<app::context_t>(context, sellitem::kTxnId)};
+  //  sellitem::txn::task_t<app::context_t> task{
+  sellitem::txn::task_type task{
+      sellitem::txn::handler<app::context_t, sellitem::txn::coordinator_type>(
+          context, sellitem::kTxnId)};
   int total_frames{};
   [[maybe_unused]] auto start = high_resolution_clock::now();
   for (int iter{}; iter < num_iter; ++iter) {

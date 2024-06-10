@@ -36,18 +36,16 @@ namespace sellitem {
     cope::result_t update_state(const msg::data_t& msg, state_t& state);
 
     template <typename ContextT>
-    using task_t = cope::txn::task_t<msg::data_t, state_t, ContextT>;
+    ContextT get_next_action_msg(const state_t& state);
 
     template <typename ContextT>
+    using task_t = cope::txn::task_t<msg::data_t, state_t, ContextT>;
+
+    template <typename ContextT, typename CoordinatorT>
     auto handler(ContextT&, cope::txn::id_t) -> task_t<ContextT>;
   }  // namespace txn
 
   namespace msg {
-    /*
-    using in_types = std::tuple<sellitem::msg::data_t, setprice::msg::data_t>;
-    using out_types = std::tuple<ui::msg::click_widget::data_t,
-        ui::msg::click_table_row::data_t>;
-    */
     using start_txn_t = cope::msg::start_txn_t<data_t, txn::state_t>;
 
     struct types {
@@ -56,4 +54,7 @@ namespace sellitem {
           ui::msg::click_table_row::data_t>;
     }; // types
   } // namespace msg
+
+  namespace txn {
+  }
 } // namespace sellitem
