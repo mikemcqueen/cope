@@ -37,13 +37,15 @@ namespace sellitem {
     cope::result_t update_state(const ContextT& context, state_t& state);
 
     template <typename T>
-    T get_next_action_msg(const state_t& state);
+    T get_yield_msg(const state_t& state);
 
     template <typename ContextT>
-    using task_t = cope::txn::task_t<msg::data_t, state_t, ContextT>;
+    using no_context_task_t = cope::txn::task_t<msg::data_t, state_t, ContextT>;
 
+    /*
     template <typename ContextT, typename CoordinatorT>
     auto handler(ContextT&, cope::txn::id_t) -> task_t<ContextT>;
+    */
   }  // namespace txn
 
   namespace msg {

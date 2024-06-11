@@ -72,7 +72,7 @@ namespace setprice::txn {
 }
 
 namespace sellitem::txn {
-  using task_type = task_t<app::context_t>;
+  using task_type = no_context_task_t<app::context_t>;
   using coordinator_type = coordinator_t<app::context_t>;
   using start_setprice_txn = setprice::txn::start_awaiter<app::context_t>;
 
@@ -88,7 +88,4 @@ namespace sellitem::txn {
     awaiter = std::move(setprice::txn::start(
         setprice_task, std::move(setprice_msg), state.item_price));
   }
-
-  extern template auto handler<app::context_t, coordinator_type>(
-      app::context_t&, cope::txn::id_t) -> task_type;
 }

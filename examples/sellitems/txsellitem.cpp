@@ -86,7 +86,7 @@ namespace sellitem::txn {
   }
 
   template <>
-  app::context_t::out_msg_type get_next_action_msg(const state_t& state) {
+  app::context_t::out_msg_type get_yield_msg(const state_t& state) {
     switch (state.next_action.value()) {
     case action::select_row: return click_table_row(state.row_idx.value());
     case action::set_price: return click_setprice_button();
@@ -126,8 +126,9 @@ namespace sellitem::txn {
   }
   */
 
+  /*
   template <typename ContextT, typename CoordinatorT>
-  auto handler(ContextT& context, cope::txn::id_t /*task_id*/)
+  auto handler(ContextT& context, cope::txn::id_t)
       -> task_t<ContextT> {
     using task_type = task_t<ContextT>;
 
@@ -163,4 +164,5 @@ namespace sellitem::txn {
 
   template auto handler<context_type, coordinator_type>(context_type&, cope::txn::id_t)
     -> task_type;
+  */
 } // namespace sellitem::txn

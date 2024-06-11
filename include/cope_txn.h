@@ -1,5 +1,7 @@
 // cope_txn.h
 
+#pragma once
+
 #ifndef INCLUDE_COPE_TXN_H
 #define INCLUDE_COPE_TXN_H
 
@@ -147,6 +149,7 @@ namespace cope::txn {
   template<class MsgT, class StateT, Context ContextT>
   struct task_t {
   public:
+    using state_type = StateT;
     using context_type = ContextT;
     using out_msg_type = context_type::out_msg_type;
     using promise_type = detail::promise<context_type>;
@@ -372,6 +375,45 @@ namespace cope::txn {
     MsgT msg_;
     StateT state_;
   };  // txn::start_awaitable
+
+  // TODO: move to cope_handlers
+  template <template <typename> typename NoContextTaskT, Context ContextT,
+      typename CoordinatorT>
+  // TODO: Coordinator concept requires:
+  //   receive_start_txn, awaiter_types, update_state, get_yield_msg,
+  //   get_awaiter
+  auto handler(ContextT& context, cope::txn::id_t) -> NoContextTaskT<ContextT> {
+    using task_type = NoContextTaskT<ContextT>;
+    using state_type = task_type::state_type;
+    using awaiter_types = typename CoordinatorT::awaiter_types;
+
+    state_type state;
+    CoordinatorT cord{context};
+
+    while (true) {
+      auto& promise = co_await cord.receive_start_txn(context, state);
+      auto& context = promise.context();
+      const auto error = [&context](result_code rc) {
+        return context.set_result(rc).failed();
+      };
+
+      while (!context.result().unexpected()) {
+        // TODO: ? see examples/txsellitems.cpp
+        // if (error(msg::validate(context.in()))) break;
+        if (error(cord.update_state(context, state))) break;
+        if (state.next_operation == operation::yield) {
+          co_yield cord.get_yield_msg(state);
+        } else if (state.next_operation == operation::await) {
+          typename std::tuple_element<0, awaiter_types>::type awaiter;
+          cord.get_awaiter(context, state, awaiter);
+          co_await awaiter;
+        } else {
+          break;  // operation::complete
+        }
+      }
+      task_type::complete_txn(promise);
+    }
+  }
 } // namespace cope::txn
 
 // clang-format off

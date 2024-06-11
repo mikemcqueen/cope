@@ -153,7 +153,7 @@ namespace {
     return result_code::s_ok;
   };
 
-  auto run(sellitem::txn::task_t<app::context_t>& task) {
+  auto run(sellitem::txn::task_type& task) {
     assert(task.promise().txn_ready());
     state::reset();
     int frame_count{};
@@ -209,14 +209,14 @@ int main() {
 #endif
   app::get_type_name_t get_type_name{};
   app::context_t context{ get_type_name };
-  //  sellitem::txn::task_t<app::context_t> task{
-  sellitem::txn::task_type task{
-      sellitem::txn::handler<app::context_t, sellitem::txn::coordinator_type>(
-          context, sellitem::kTxnId)};
+  sellitem::txn::task_type sellitem_task{
+      cope::txn::handler<sellitem::txn::no_context_task_t, app::context_t,
+          sellitem::txn::coordinator_type>(context, sellitem::kTxnId)};
+
   int total_frames{};
   [[maybe_unused]] auto start = high_resolution_clock::now();
   for (int iter{}; iter < num_iter; ++iter) {
-    auto frame_count = run(task);
+    auto frame_count = run(sellitem_task);
     total_frames += frame_count;
   }
 #ifdef NDEBUG
