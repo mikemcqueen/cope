@@ -13,6 +13,7 @@ namespace setprice {
   constexpr auto kTxnId{ cope::txn::make_id(10) };
 
   namespace txn {
+    // state type
     struct state_t {
       //cope::msg::id_t prev_msg_id; // i.e. "who called us"
       int price;
@@ -33,6 +34,11 @@ namespace setprice {
     // task type
     template <typename ContextT>
     using task_t = cope::txn::task_t<msg::data_t, state_t, ContextT>;
+
+    template <typename ContextT>
+    using start_awaiter =
+        cope::txn::start_awaitable<setprice::txn::task_t<ContextT>,
+            setprice::msg::data_t, setprice::txn::state_t>;
 
     template<typename ContextT>
     auto handler(ContextT&, cope::txn::id_t) -> task_t<ContextT>;

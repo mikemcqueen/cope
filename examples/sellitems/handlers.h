@@ -6,27 +6,28 @@
 #include "internal/cope_log.h"
 #include "cope.h"
 
+/*
 namespace visit {
   namespace log = cope::log;
 
-struct type_name {
-  void operator()(const sellitem::msg::start_txn_t&) const {
-    log::info("sellitem::txn");
-  }
-  void operator()(const sellitem::msg::data_t&) const {
-    log::info("sellitem::msg");
-  }
-  void operator()(const setprice::msg::start_txn_t&) const {
-    log::info("setprice::txn");
-  }
-  void operator()(const setprice::msg::data_t&) const {
-    log::info("setprice::msg");
-  }
-};
+  struct type_name {
+    void operator()(const sellitem::msg::start_txn_t&) const {
+      log::info("sellitem::txn");
+    }
+    void operator()(const sellitem::msg::data_t&) const {
+      log::info("sellitem::msg");
+    }
+    void operator()(const setprice::msg::start_txn_t&) const {
+      log::info("setprice::txn");
+    }
+    void operator()(const setprice::msg::data_t&) const {
+      log::info("setprice::msg");
+    }
+  };
 } // namespace visit
+*/
 
 namespace app {
-  /*constexpr inline auto get_type_name = [](auto&& arg) -> std::string {*/
   struct get_type_name_t {
     auto operator()(const auto& msg) const -> std::string {
       auto ui_type_name = ui::msg::get_type_name(msg);
@@ -68,19 +69,21 @@ namespace app {
 namespace setprice::txn {
   extern template auto handler<app::context_t>(app::context_t&, cope::txn::id_t)
       -> task_t<app::context_t>;
-  // TODO UGH!
-  using start_awaiter = sellitem::txn::setprice_start_awaiter<app::context_t>;
 }
 
 namespace sellitem::txn {
   using task_type = task_t<app::context_t>;
   using coordinator_type = coordinator_t<app::context_t>;
+  using start_setprice_txn = setprice::txn::start_awaiter<app::context_t>;
 
+  // TODO: i think i actually need this specialization and can't just do
+  // if constexpr (is_same_v<T, start_setprice_txn>()) because of
+  // app::context_tt.. it's the context_t requirement that makes this
+  //necessary (and messy)
   template <>
   template <>
-  inline auto coordinator_type::get_awaiter<setprice::txn::start_awaiter>(
-      app::context_t& context, const sellitem::txn::state_t& state,
-      setprice::txn::start_awaiter& awaiter) {
+  inline auto coordinator_type::get_awaiter(app::context_t& context,
+      const sellitem::txn::state_t& state, start_setprice_txn& awaiter) {
     auto& setprice_msg = std::get<setprice::msg::data_t>(context.in());
     awaiter = std::move(setprice::txn::start(
         setprice_task, std::move(setprice_msg), state.item_price));

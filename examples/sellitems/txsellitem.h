@@ -25,7 +25,7 @@ namespace sellitem {
       std::optional<int> row_idx;
       std::optional<action> next_action;
       std::optional<cope::operation> next_operation;
-    }; // sellitem::txn::state_t
+    };  // txn::state_t
 
     inline constexpr auto make_state(
         const std::string& item_name, int item_price) {
@@ -33,10 +33,11 @@ namespace sellitem {
           item_name, item_price, std::nullopt, std::nullopt, std::nullopt};
     }
 
-    cope::result_t update_state(const msg::data_t& msg, state_t& state);
-
     template <typename ContextT>
-    ContextT get_next_action_msg(const state_t& state);
+    cope::result_t update_state(const ContextT& context, state_t& state);
+
+    template <typename T>
+    T get_next_action_msg(const state_t& state);
 
     template <typename ContextT>
     using task_t = cope::txn::task_t<msg::data_t, state_t, ContextT>;
@@ -54,7 +55,4 @@ namespace sellitem {
           ui::msg::click_table_row::data_t>;
     }; // types
   } // namespace msg
-
-  namespace txn {
-  }
 } // namespace sellitem

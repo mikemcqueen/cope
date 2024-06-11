@@ -5,17 +5,11 @@
 #include "internal/cope_log.h"
 
 namespace sellitem::txn {
-  using namespace std::literals;
   namespace log = cope::log;
   using cope::result_code;
   using sellitem::msg::data_t;
   using sellitem::msg::row_data_t;
-
-  //using type_bundle_t = cope::msg::type_bundle_t<sellitem::msg::types,
-  //   setprice::msg::types>;
-  //using context_type = cope::txn::context_t<type_bundle_t>;
   using context_type = app::context_t;
-  //using task_t = app::task_t; // = cope::txn::task_t<context_type>;
 
   const auto& get_row(const context_type& context, const state_t& state) {
     const data_t& msg = std::get<data_t>(context.in());
@@ -45,20 +39,6 @@ namespace sellitem::txn {
     throw new std::runtime_error("get_row_state()");
   }
 
-  /*
-  auto get_next_operation(const state_t& state) {
-    using namespace cope;
-    switch (state.next_action.value()) {
-    case action::select_row: return operation::yield; // click row
-    case action::set_price: {
-      return operation::yield; // click set_price button TODO TODO
-    }
-    case action::list_item: return operation::yield; // click 'list item' button
-    default: throw new std::runtime_error("invalid next_action");
-    }
-  }
-  */
-
   cope::result_t update_state(const data_t& msg, state_t& state) {
     for (size_t row_idx{}; row_idx < msg.rows.size(); ++row_idx) {
       const auto& row = msg.rows.at(row_idx);
@@ -69,7 +49,7 @@ namespace sellitem::txn {
         // TODO: it's not clear this next_action business is necessary.
         // couldn't we just store the out_msg in the state?
         state.next_action = get_next_action(row, state);
-        state.next_operation = cope::operation::yield; // get_next_operation(state);
+        state.next_operation = cope::operation::yield;
         return result_code::s_ok;
       }
     }
@@ -78,7 +58,9 @@ namespace sellitem::txn {
     return result_code::s_ok;
   }
 
+  template <>
   cope::result_t update_state(const context_type& context, state_t& state) {
+    // sellitem::msg -> yield next_action_msg
     if (std::holds_alternative<sellitem::msg::data_t>(context.in())) {
       return update_state(std::get<data_t>(context.in()), state);
     }
@@ -103,7 +85,6 @@ namespace sellitem::txn {
     return ui::msg::click_widget::data_t{ 2 };
   }
 
-  /*app::context_t::out_msg_type*/
   template <>
   app::context_t::out_msg_type get_next_action_msg(const state_t& state) {
     switch (state.next_action.value()) {
@@ -113,12 +94,6 @@ namespace sellitem::txn {
     default: throw new std::runtime_error("invalid action");
     }
   }
-
-  /*
-  auto update_state(const context_type& context, state_t& state) {
-    return update_state(std::get<data_t>(context.in()), state);
-  }
-  */
 
   /*
   struct validate_row_options {
@@ -154,9 +129,8 @@ namespace sellitem::txn {
   template <typename ContextT, typename CoordinatorT>
   auto handler(ContextT& context, cope::txn::id_t /*task_id*/)
       -> task_t<ContextT> {
-    //    using yield_msg_type = ContextT::out_msg_type;
     using task_type = task_t<ContextT>;
-    // using coordinator_type =
+
     state_t state;
     CoordinatorT test(context);
 
@@ -170,12 +144,13 @@ namespace sellitem::txn {
       while (!context.result().unexpected()) {
         // TODO: ?
         // if (error(msg::validate(context.in()))) break;
-        if (error(update_state(context, state))) break;
+        if (error(test.update_state(context, state))) break;
         using cope::operation;
         if (state.next_operation == operation::yield) {
           co_yield test.get_next_action_msg(state);
         } else if (state.next_operation == operation::await) {
-          typename std::tuple_element<0, typename CoordinatorT::awaiter_types>::type awaiter;
+          typename std::tuple_element<0,
+              typename CoordinatorT::awaiter_types>::type awaiter;
           test.get_awaiter(context, state, awaiter);
           co_await awaiter;
         } else {
