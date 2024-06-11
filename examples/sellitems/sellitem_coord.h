@@ -40,7 +40,7 @@ namespace sellitem {
         throw new std::runtime_error("baddd");
       }
 
-      setprice::txn::task_t<context_type> setprice_task;
+      setprice::txn::no_context_task_t<context_type> setprice_task;
     };  // struct coordinator_t
 
   }  // namespace txn

@@ -68,7 +68,7 @@ namespace app {
 
 namespace setprice::txn {
   extern template auto handler<app::context_t>(app::context_t&, cope::txn::id_t)
-      -> task_t<app::context_t>;
+      -> no_context_task_t<app::context_t>;
 }
 
 namespace sellitem::txn {

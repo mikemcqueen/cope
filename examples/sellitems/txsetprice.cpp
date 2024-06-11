@@ -48,9 +48,9 @@ namespace setprice::txn {
 
   template<typename ContextT>
   auto handler(ContextT& /*context*/, cope::txn::id_t /*task_id*/)
-    -> task_t<ContextT>
+    -> no_context_task_t<ContextT>
   {
-    using task_type = task_t<ContextT>;
+    using task_type = no_context_task_t<ContextT>;
     using receive_start_txn = cope::txn::receive_awaitable<task_type, msg::data_t, state_t>;
 
     state_t state;
@@ -75,5 +75,5 @@ namespace setprice::txn {
   }
 
   template auto handler<app::context_t>(app::context_t&, cope::txn::id_t)
-      -> task_t<app::context_t>;
+      -> no_context_task_t<app::context_t>;
 } // namespace setprice::txn

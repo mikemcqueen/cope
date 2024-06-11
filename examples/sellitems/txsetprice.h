@@ -1,9 +1,10 @@
 // txsetprice.h
 
+#pragma once
+
 #ifndef INCLUDE_TXSETPRICE_H
 #define INCLUDE_TXSETPRICE_H
 
-#include <string_view>
 #include "cope.h"
 #include "sellitem_msg.h"
 #include "setprice_msg.h"
@@ -19,30 +20,37 @@ namespace setprice {
       int price;
     };
 
+    // task type (without context)
+    template <typename ContextT>
+    using no_context_task_t = cope::txn::task_t<msg::data_t, state_t, ContextT>;
+
+    /*
     template<typename TaskT>
     using start_awaitable = cope::txn::start_awaitable<TaskT, msg::data_t,
       state_t>;
-
-    template<typename TaskT>
-    inline auto start(const TaskT& task, setprice::msg::data_t&& msg,
-        int price) {
-      state_t state{ price };
-      return start_awaitable<TaskT>{ task.handle(), std::move(msg),
-        std::move(state) };
-    }
-
-    // task type
-    template <typename ContextT>
-    using task_t = cope::txn::task_t<msg::data_t, state_t, ContextT>;
+    */
 
     template <typename ContextT>
     using start_awaiter =
-        cope::txn::start_awaitable<setprice::txn::task_t<ContextT>,
-            setprice::msg::data_t, setprice::txn::state_t>;
+        cope::txn::start_awaitable<no_context_task_t<ContextT>, msg::data_t,
+            state_t>;
 
-    template<typename ContextT>
-    auto handler(ContextT&, cope::txn::id_t) -> task_t<ContextT>;
-  } // namespace txn
+    template <typename TaskT>
+    inline auto start(
+        const TaskT& task, setprice::msg::data_t&& msg, int price) {
+      state_t state{price};
+#if 0
+      return start_awaitable<TaskT>{
+#else
+      return start_awaiter<typename TaskT::context_type>{
+#endif
+        task.handle(), std::move(msg), std::move(state)
+    };
+    }
+
+    template <typename ContextT>
+    auto handler(ContextT&, cope::txn::id_t) -> no_context_task_t<ContextT>;
+  }  // namespace txn
 
   namespace msg {
     using in_types = std::tuple<setprice::msg::data_t, sellitem::msg::data_t>;

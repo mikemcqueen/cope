@@ -1,7 +1,6 @@
 #pragma once
 
 #include <optional>
-#include <string_view>
 #include <tuple>
 #include "cope.h"
 #include "sellitem_msg.h"
@@ -18,6 +17,7 @@ namespace sellitem {
   };
 
   namespace txn {
+    // state type
     struct state_t {
       std::string item_name;
       int item_price;
@@ -25,13 +25,11 @@ namespace sellitem {
       std::optional<int> row_idx;
       std::optional<action> next_action;
       std::optional<cope::operation> next_operation;
-    };  // txn::state_t
+    };
 
-    inline constexpr auto make_state(
-        const std::string& item_name, int item_price) {
-      return state_t{
-          item_name, item_price, std::nullopt, std::nullopt, std::nullopt};
-    }
+    // task type (without context)
+    template <typename ContextT>
+    using no_context_task_t = cope::txn::task_t<msg::data_t, state_t, ContextT>;
 
     template <typename ContextT>
     cope::result_t update_state(const ContextT& context, state_t& state);
@@ -39,13 +37,11 @@ namespace sellitem {
     template <typename T>
     T get_yield_msg(const state_t& state);
 
-    template <typename ContextT>
-    using no_context_task_t = cope::txn::task_t<msg::data_t, state_t, ContextT>;
-
-    /*
-    template <typename ContextT, typename CoordinatorT>
-    auto handler(ContextT&, cope::txn::id_t) -> task_t<ContextT>;
-    */
+    inline constexpr auto make_state(
+        const std::string& item_name, int item_price) {
+      return state_t{
+          item_name, item_price, std::nullopt, std::nullopt, std::nullopt};
+    }
   }  // namespace txn
 
   namespace msg {
