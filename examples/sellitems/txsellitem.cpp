@@ -1,5 +1,5 @@
 #include "msvc_wall.h"
-#include "handlers.h"
+#include "app.h"
 #include "ui_msg.h"
 #include "sellitem_coord.h"
 #include "internal/cope_log.h"

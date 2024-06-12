@@ -5,6 +5,7 @@
 #ifndef INCLUDE_TXSETPRICE_H
 #define INCLUDE_TXSETPRICE_H
 
+#include <optional>
 #include "cope.h"
 #include "sellitem_msg.h"
 #include "setprice_msg.h"
@@ -13,22 +14,23 @@
 namespace setprice {
   constexpr auto kTxnId{ cope::txn::make_id(10) };
 
+  enum class action : int {
+    enter_price,
+    click_ok
+  };
+
   namespace txn {
     // state type
     struct state_t {
       //cope::msg::id_t prev_msg_id; // i.e. "who called us"
       int price;
+      std::optional<action> next_action{std::nullopt};
+      std::optional<cope::operation> next_operation{std::nullopt};
     };
 
     // task type (without context)
     template <typename ContextT>
     using no_context_task_t = cope::txn::task_t<msg::data_t, state_t, ContextT>;
-
-    /*
-    template<typename TaskT>
-    using start_awaitable = cope::txn::start_awaitable<TaskT, msg::data_t,
-      state_t>;
-    */
 
     template <typename ContextT>
     using start_awaiter =
@@ -39,17 +41,15 @@ namespace setprice {
     inline auto start(
         const TaskT& task, setprice::msg::data_t&& msg, int price) {
       state_t state{price};
-#if 0
-      return start_awaitable<TaskT>{
-#else
       return start_awaiter<typename TaskT::context_type>{
-#endif
-        task.handle(), std::move(msg), std::move(state)
-    };
+          task.handle(), std::move(msg), std::move(state)};
     }
 
     template <typename ContextT>
-    auto handler(ContextT&, cope::txn::id_t) -> no_context_task_t<ContextT>;
+    cope::result_t update_state(const ContextT& context, state_t& state);
+
+    template <typename T>
+    T get_yield_msg(const state_t& state);
   }  // namespace txn
 
   namespace msg {

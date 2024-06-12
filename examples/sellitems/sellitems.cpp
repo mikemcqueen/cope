@@ -8,8 +8,7 @@
 #include <string>
 #include <variant>
 #include "cope.h"
-#include "handlers.h"
-#include "sellitem_coord.h"
+#include "sellitem_task.h"
 #include "ui_msg.h"
 #include "internal/cope_log.h"
 

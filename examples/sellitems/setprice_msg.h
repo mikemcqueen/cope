@@ -10,7 +10,7 @@ namespace setprice {
 
     template<typename Msg>
     inline auto validate(const Msg& msg) {
-      using namespace cope;
+      using cope::result_code;
       // TODO: use cope::msg::validate<data_t>(msg)
       return std::holds_alternative<data_t>(msg) ?
         result_code::s_ok : result_code::e_unexpected_msg_type;

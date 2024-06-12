@@ -2,10 +2,9 @@
 
 #pragma once
 
-#include "handlers.h"
 #include "txsellitem.h"
 #include "txsetprice.h"
-//#include "ui_msg.h"
+#include "setprice_coord.h"
 
 namespace sellitem {
   namespace txn {
@@ -19,7 +18,9 @@ namespace sellitem {
       using awaiter_types = std::tuple<setprice::txn::start_awaiter<context_type>>;
 
       coordinator_t(context_type& context)
-          : setprice_task(setprice::txn::handler(context, setprice::kTxnId)) {}
+          : setprice_task(cope::txn::handler<setprice::txn::no_context_task_t,
+              context_type, setprice::txn::coordinator_t<context_type>>(
+              context, setprice::kTxnId)) {}
 
       cope::result_t update_state(const context_type& context, state_t& state) {
         return sellitem::txn::update_state(context, state);

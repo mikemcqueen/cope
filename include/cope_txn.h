@@ -405,8 +405,10 @@ namespace cope::txn {
           co_yield cord.get_yield_msg(state);
         } else if (state.next_operation == operation::await) {
           typename std::tuple_element<0, awaiter_types>::type awaiter;
-          cord.get_awaiter(context, state, awaiter);
-          co_await awaiter;
+          if constexpr (!std::is_same_v<decltype(awaiter), std::monostate>) {
+            cord.get_awaiter(context, state, awaiter);
+            co_await awaiter;
+          }
         } else {
           break;  // operation::complete
         }
