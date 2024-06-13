@@ -1,5 +1,15 @@
-* some way to make result_t and result_code share the same formatter (converting constructor? delegating template specialization?)
+* could i wrap cope::txn::handler(s) in (a) template functor, thus making it easier to
+  create aliases, and cleaner to define the input to _task objects? (just include a ())
 
+* txetprice.h -> setprice_types.h
+* coordinator_t -> manager_t -> txsetprice.h
+
+* don't allow unsupported messages for a particular txn to propagate through
+  in the frist place.
+
+* some way to make result_t and result_code share the same formatter (converting constructor? delegating template specialization?)
+  * already done?
+  
 * so the context using "all the bundles" is a bit weird. isn't there a way around this using
   the type-erased coroutine handle?
   * maybe not. because in a triple-nested scenario, you'd have:
@@ -7,9 +17,6 @@
     * context<fromB, toC> -- middle
     * for the start_awaitables anyway. maybe i can fudge my way around that with coro_handle<> ?
 
-* make sellitem example compile
-* make validation work. 
-* see _storage_type in <format>, maybe alternative to proxy_t (maybe shouuld be storage_t)
 
 * benchmarks:
   * execute a txn, return immediately
@@ -23,12 +30,8 @@
     * w and w/o AVX2
   * with/without string msg_name/txn_name (templatize IdT)
 
-
-
-* make the sellitems sample more pretty. (?)
 * add compiler options (linux especially?)
 * support command line -q, -i<iter>
-* remove all references to "Broker::*"
 * another example. moving average (temperature?) calc + temp control?
   could have different temp control strategies, slow, medium, fast response
   however, this doesn't really highlight the "nested state" problem

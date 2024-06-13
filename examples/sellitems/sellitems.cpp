@@ -8,7 +8,7 @@
 #include <string>
 #include <variant>
 #include "cope.h"
-#include "sellitem_task.h"
+#include "txsellitem.h"
 #include "ui_msg.h"
 #include "internal/cope_log.h"
 
@@ -142,8 +142,8 @@ namespace {
 
   constexpr inline auto dispatch = [](const auto& msg) {
     using namespace cope;
-    using namespace ui::msg;
-    auto msg_name = get_type_name(msg);
+    //using namespace ui::msg;
+    auto msg_name = ui::msg::get_type_name(msg);
     if (!msg_name.has_value()) {
       log::info("dispatch: unsupported message");
       return result_code::e_unexpected_msg_type;
@@ -185,7 +185,7 @@ namespace {
         if (task.promise().txn_running()) {
           std::visit(dispatch, var);
         }
-        out_msg_id = ui::msg::get_id(var);
+        out_msg_id = ::ui::msg::get_id(var);
       }, v2);
       //assert(out_msg_id == expected_out_msg_id);
       ++frame_count;
@@ -208,20 +208,19 @@ int main() {
 #endif
   app::get_type_name_t get_type_name{};
   app::context_t context{ get_type_name };
-  sellitem::txn::task_type sellitem_task{
-      cope::txn::handler<sellitem::txn::no_context_task_t, app::context_t,
-          sellitem::txn::coordinator_type>(context, sellitem::kTxnId)};
+  auto sellitem_task{
+      cope::txn::handler<sellitem::txn::task_t, sellitem::txn::manager_t>(
+          context, sellitem::kTxnId)};
 
   int total_frames{};
-  [[maybe_unused]] auto start = high_resolution_clock::now();
+  auto start = high_resolution_clock::now();
   for (int iter{}; iter < num_iter; ++iter) {
-    auto frame_count = run(sellitem_task);
-    total_frames += frame_count;
+    auto num_frames = run(sellitem_task);
+    total_frames += num_frames;
   }
-#ifdef NDEBUG
   auto end = high_resolution_clock::now();
-  auto elapsed = (double)duration_cast<nanoseconds>(end - start).count();
-#endif
+  [[maybe_unused]] auto elapsed =
+      (double)duration_cast<nanoseconds>(end - start).count();
   std::cerr << num_iter << " iters, " << total_frames << " frames"
 #ifdef NDEBUG
             << std::fixed << std::setprecision(2)

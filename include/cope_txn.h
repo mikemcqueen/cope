@@ -16,6 +16,8 @@
 #include "internal/cope_log.h"
 #include "traits.h"
 
+#define NOEXCEPT
+
 namespace cope::txn {
   enum class id_t : int {};
 
@@ -96,17 +98,22 @@ namespace cope::txn {
 
     public:
       promise() = delete;
-      promise(context_type& context, id_t task_id) noexcept :
+      promise(context_type& context, id_t task_id) NOEXCEPT :
         context_(context), txn_id_(task_id) {}
 
       auto get_return_object() noexcept { return this; }
       initial_awaiter initial_suspend() noexcept { return {}; }
       std::suspend_always final_suspend() noexcept { return {}; }
       void unhandled_exception() {
-        log::info("task_id:{} *** unhandled_exception() ***", txn_id());
-        // TODO: store for retrieval? store what? force suspend? set error?
-        // something?
-        throw;
+        log::info("task_id:{} *** unhandled_exception ***", txn_id());
+        try {
+          std::rethrow_exception(std::current_exception());
+        } catch (const std::exception& e) {
+          log::info("task_id:{} exception: {}", txn_id(), e.what());
+          // TODO: store for retrieval? store what? force suspend? set error?
+          // something?
+          throw;
+        }
       }
       void return_void() { throw std::runtime_error("co_return not allowed"); }
 
@@ -160,7 +167,7 @@ namespace cope::txn {
     task_t(task_t&) = delete;
     task_t& operator=(const task_t&) = delete;
 
-    task_t(promise_type* p) noexcept :
+    task_t(promise_type* p) NOEXCEPT :
       coro_handle_(handle_type::from_promise(*p)) {}
     ~task_t() { if (coro_handle_) coro_handle_.destroy(); }
 
@@ -193,8 +200,8 @@ namespace cope::txn {
     static void complete_txn(promise_type& promise) {
       if (!promise.txn_running()) {
         // TODO: nasty place to throw. need to figure out error handling.
-        log::info("ERROR txn::complete(): txn is not running");
-        throw std::logic_error("txn::complete(): txn is not running");
+        log::info("complete_txn(): txn is not running");
+        throw std::runtime_error("txn::complete(): txn is not running");
       }
       if (promise.context().result().failed()) {
         log::info("ERROR task_id:{} completing with code: {}", promise.txn_id(),
@@ -323,6 +330,7 @@ namespace cope::txn {
 
     void ensure_not_running() {
       if (this->promise().txn_running()) {
+        log::info("task is running");
         throw std::runtime_error(
             std::format("task_id:{} receive_awaitable::await_suspend(), "
                         "task cannot be running",
@@ -377,21 +385,22 @@ namespace cope::txn {
   };  // txn::start_awaitable
 
   // TODO: move to cope_handlers
-  template <template <typename> typename NoContextTaskT, Context ContextT,
-      typename CoordinatorT>
+  template <template <typename> typename NoContextTaskT,
+      template <typename> typename ManagerT, Context ContextT>
   // TODO: Coordinator concept requires:
   //   receive_start_txn, awaiter_types, update_state, get_yield_msg,
   //   get_awaiter
-  auto handler(ContextT& context, cope::txn::id_t) -> NoContextTaskT<ContextT> {
+  auto handler(ContextT& context, id_t) -> NoContextTaskT<ContextT> {
     using task_type = NoContextTaskT<ContextT>;
+    using manager_type = ManagerT<ContextT>;
     using state_type = task_type::state_type;
-    using awaiter_types = typename CoordinatorT::awaiter_types;
+    using awaiter_types = typename manager_type::awaiter_types;
 
     state_type state;
-    CoordinatorT cord{context};
+    manager_type mgr{context};
 
     while (true) {
-      auto& promise = co_await cord.receive_start_txn(context, state);
+      auto& promise = co_await mgr.receive_start_txn(context, state);
       auto& context = promise.context();
       const auto error = [&context](result_code rc) {
         return context.set_result(rc).failed();
@@ -400,13 +409,13 @@ namespace cope::txn {
       while (!context.result().unexpected()) {
         // TODO: ? see examples/txsellitems.cpp
         // if (error(msg::validate(context.in()))) break;
-        if (error(cord.update_state(context, state))) break;
+        if (error(mgr.update_state(context, state))) break;
         if (state.next_operation == operation::yield) {
-          co_yield cord.get_yield_msg(state);
+          co_yield mgr.get_yield_msg(state);
         } else if (state.next_operation == operation::await) {
           typename std::tuple_element<0, awaiter_types>::type awaiter;
           if constexpr (!std::is_same_v<decltype(awaiter), std::monostate>) {
-            cord.get_awaiter(context, state, awaiter);
+            mgr.get_awaiter(context, state, awaiter);
             co_await awaiter;
           }
         } else {

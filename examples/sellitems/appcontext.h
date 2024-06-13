@@ -1,31 +1,10 @@
+// appcontext.h
+
 #pragma once
 
-#include "txsellitem.h"
-#include "txsetprice.h"
-#include "sellitem_coord.h"
-#include "internal/cope_log.h"
-#include "cope.h"
-
-/*
-namespace visit {
-  namespace log = cope::log;
-
-  struct type_name {
-    void operator()(const sellitem::msg::start_txn_t&) const {
-      log::info("sellitem::txn");
-    }
-    void operator()(const sellitem::msg::data_t&) const {
-      log::info("sellitem::msg");
-    }
-    void operator()(const setprice::msg::start_txn_t&) const {
-      log::info("setprice::txn");
-    }
-    void operator()(const setprice::msg::data_t&) const {
-      log::info("setprice::msg");
-    }
-  };
-} // namespace visit
-*/
+#include "sellitem_types.h"
+#include "setprice_types.h"
+#include "cope_txn.h" // TODO: really just cope_context + cope_bundle
 
 namespace app {
   struct get_type_name_t {
@@ -53,14 +32,7 @@ namespace app {
     }
   };
 
-  /*
-  template<typename Variant>
-  inline auto get_type_name(const Variant& var) {
-    return std::visit(fn, var);
-  }
-  */
-
   using type_bundle_t =
       cope::msg::type_bundle_t<sellitem::msg::types, setprice::msg::types>;
   using context_t = cope::txn::context_t<type_bundle_t, get_type_name_t>;
-}
+}  // namespace app

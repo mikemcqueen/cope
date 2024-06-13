@@ -5,67 +5,72 @@
 #ifndef INCLUDE_TXSETPRICE_H
 #define INCLUDE_TXSETPRICE_H
 
-#include <optional>
-#include "cope.h"
-#include "sellitem_msg.h"
-#include "setprice_msg.h"
-#include "ui_msg.h"
+#include "appcontext.h"
+#include "setprice_types.h"
+#include "setprice_ui.h"
 
-namespace setprice {
-  constexpr auto kTxnId{ cope::txn::make_id(10) };
+namespace cope::txn {
+  // explicit instantiation
+  template class cope::txn::task_t<setprice::msg::data_t,
+      setprice::txn::state_t, app::context_t>;
+}  // namespace cope::txn
 
-  enum class action : int {
-    enter_price,
-    click_ok
-  };
+namespace setprice::txn {
 
-  namespace txn {
-    // state type
-    struct state_t {
-      //cope::msg::id_t prev_msg_id; // i.e. "who called us"
-      int price;
-      std::optional<action> next_action{std::nullopt};
-      std::optional<cope::operation> next_operation{std::nullopt};
-    };
+  template <typename TaskT>
+  inline auto start(const TaskT& task, setprice::msg::data_t&& msg, int price) {
+    state_t state{price};
+    return start_awaiter<typename TaskT::context_type>{
+        task.handle(), std::move(msg), std::move(state)};
+  }
 
-    // task type (without context)
-    template <typename ContextT>
-    using no_context_task_t = cope::txn::task_t<msg::data_t, state_t, ContextT>;
+  cope::result_t update_state(const msg::data_t& msg, state_t& state);
 
-    template <typename ContextT>
-    using start_awaiter =
-        cope::txn::start_awaitable<no_context_task_t<ContextT>, msg::data_t,
-            state_t>;
+  template <cope::txn::Context ContextT>
+  struct manager_t {
+    using context_type = ContextT;
+    using yield_msg_type = context_type::out_msg_type;
+    using task_type = task_t<context_type>;
+    // TODO
+    using awaiter_types = std::tuple<std::monostate>;
 
-    template <typename TaskT>
-    inline auto start(
-        const TaskT& task, setprice::msg::data_t&& msg, int price) {
-      state_t state{price};
-      return start_awaiter<typename TaskT::context_type>{
-          task.handle(), std::move(msg), std::move(state)};
+    manager_t(context_type&) {}
+
+    cope::result_t update_state(const context_type& context, state_t& state) {
+      const auto& msg = context.in();
+      cope::result_t result{};
+      if (result = msg::validate(msg); result.succeeded()) {
+        // setprice:msg -> yield next_action_msg
+        using setprice::txn::update_state;
+        return update_state(std::get<msg::data_t>(msg), state);
+      }
+      if (result = sellitem::msg::validate(msg); result.succeeded()) {
+        // sellitem::msg -> txn::complete
+        state.next_operation = cope::operation::complete;
+      }
+      return result;
     }
 
-    template <typename ContextT>
-    cope::result_t update_state(const ContextT& context, state_t& state);
+    yield_msg_type get_yield_msg(const state_t& state) {
+      using namespace setprice::ui;
+      switch (state.next_action.value()) {
+      case action::enter_price: return enter_price_text(state.price);
+      case action::click_ok: return click_ok_button();
+      default: throw new std::runtime_error("invalid action");
+      }
+    }
 
+    auto receive_start_txn(context_type&, state_t& state) {
+      using namespace cope::txn;
+      return receive_awaitable<task_type, msg::data_t, state_t>{state};
+    }
+
+    // not specialized, should never be called
     template <typename T>
-    T get_yield_msg(const state_t& state);
-  }  // namespace txn
-
-  namespace msg {
-    using in_types = std::tuple<setprice::msg::data_t, sellitem::msg::data_t>;
-    using out_types =
-        std::tuple<ui::msg::click_widget::data_t, ui::msg::send_chars::data_t>;
-    using start_txn_t =
-        cope::msg::start_txn_t<setprice::msg::data_t, setprice::txn::state_t>;
-
-    struct types {
-      // TODO: tuple::concat_t<start, in_types>
-      using in_tuple_t = std::tuple<start_txn_t, setprice::msg::data_t,
-        sellitem::msg::data_t>;
-      using out_tuple_t = setprice::msg::out_types;
-    }; // setprice::msg::types
-  }  // namespace msg
-} // namespace setprice
+    auto get_awaiter(context_type&, const state_t&, T&) {
+      throw new std::runtime_error("baddd");
+    }
+  };  // struct manager_t
+}  // namespace setprice::txn
 
 #endif // INCLUDE_TXSETPRICE_H
