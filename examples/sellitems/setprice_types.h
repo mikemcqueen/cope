@@ -21,17 +21,13 @@ namespace setprice {
     struct state_t {
       //cope::msg::id_t prev_msg_id; // i.e. "who called us"
       int price;
-      std::optional<action> next_action{std::nullopt};
-      std::optional<cope::operation> next_operation{std::nullopt};
+      std::optional<action> next_action{};
+      std::optional<cope::operation> next_operation{};
     };
 
-    // task type (without context)
+    // task type
     template <typename ContextT>
     using task_t = cope::txn::task_t<msg::data_t, state_t, ContextT>;
-
-    template <typename ContextT>
-    using start_awaiter =
-        cope::txn::start_awaitable<task_t<ContextT>, msg::data_t, state_t>;
   }  // namespace txn
 
   namespace msg {

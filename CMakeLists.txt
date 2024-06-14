@@ -12,5 +12,5 @@ else()
   add_compile_options(-Wall -Wextra -pedantic -Werror)
 endif()
 
-#add_subdirectory (benchmarks)
+add_subdirectory (benchmarks)
 add_subdirectory (examples)

@@ -2,135 +2,176 @@
 
 #include <chrono>
 #include <exception>
-#include <iostream>
-#include <string_view>
 #include <tuple>
 #include "cope.h"
+#include "log.h"
 
 namespace nested {
   constexpr auto kOuterTxnId{ cope::txn::make_id(100) };
   constexpr auto kInnerTxnId{ cope::txn::make_id(200) };
 
-  namespace inner {
-    struct in_msg_t { int value; };
-    struct out_msg_t { int value; };
-  } // namespace inner
+  struct out_msg_t {
+    int value;
+  };
 
-  namespace outer {
-    struct in_msg_t { int value; };
-    struct out_msg_t { int value; };
-  } // namespace outer
+  namespace msg {
+    struct data_t {
+      int value;
+    };
+  }
 
-  namespace inner {
-    using state_t = int;
-    struct types {
-      using start_txn_t = cope::msg::start_txn_t<in_msg_t, state_t>;
-      using in_tuple_t = std::tuple<start_txn_t, in_msg_t, outer::in_msg_t>;
-      using out_tuple_t = std::tuple<out_msg_t>;
+  namespace txn {
+    struct state_t {
+      int value;
+      std::optional<cope::operation> next_operation{};
     };
 
-    template<typename TaskT>
-    using start_awaitable = cope::txn::start_awaitable<TaskT, in_msg_t, state_t>;
+    template <typename ContextT>
+    using task_t = cope::txn::task_t<msg::data_t, state_t, ContextT>;
+  }
 
-    template<typename ContextT>
-    auto handler([[maybe_unused]] ContextT& context,
-      [[maybe_unused]] cope::txn::id_t task_id)
-      -> cope::txn::task_t<ContextT>
-    {
-      using task_t = cope::txn::task_t<ContextT>;
-      using receive_start_txn = cope::txn::receive_awaitable<task_t, in_msg_t,
-        state_t>;
+  namespace inner::msg {
+    using start_txn_t =
+        cope::msg::start_txn_t<nested::msg::data_t, txn::state_t>;
 
-      state_t state;
-
-      while (true) {
-        auto& promise = co_await receive_start_txn{ state };
-        cope::log::info("  inner: received start_txn");
-        while (!promise.context().result().unexpected()) {
-          cope::log::info("  inner: yielding...");
-          co_yield out_msg_t{ 3 };
-          cope::log::info("  inner: resumed");
-          if (std::holds_alternative<outer::in_msg_t>(promise.context().in())) {
-            break;
-          }
-        }
-        if (!promise.context().result().succeeded()) {
-          cope::log::info("  inner: completing with error {}",
-            promise.context().result().code);
-        } else {
-          cope::log::info("  inner: completing");
-        }
-        task_t::complete_txn(promise);
-      }
-    }
-  } // namespace inner;
-
-  namespace outer {
-    using state_t = int;
     struct types {
-      using start_txn_t = cope::msg::start_txn_t<in_msg_t, state_t>;
-      using in_tuple_t = std::tuple<start_txn_t, in_msg_t, inner::in_msg_t>;
+      using in_tuple_t = std::tuple<start_txn_t, nested::msg::data_t>;
       using out_tuple_t = std::tuple<out_msg_t>;
     };
+  }
 
-    //using context_type = cope::txn::context_t<type_bundle_t>;
-    //using task_type = cope::txn::task_t<context_type>;
+  namespace outer::msg {
+    using start_txn_t =
+        cope::msg::start_txn_t<nested::msg::data_t, txn::state_t>;
+    struct types {
+      using in_tuple_t = std::tuple<start_txn_t, nested::msg::data_t>;
+      using out_tuple_t = std::tuple<nested::out_msg_t>;
+    };
+  }
 
-    template<typename TaskT>
-    inline auto start_inner(const TaskT& task, inner::in_msg_t&& msg) {
-      auto inner_state = inner::state_t{ 1 };
-      return inner::start_awaitable<TaskT>{ task.handle(), std::move(msg),
-        inner_state };
+  using type_bundle_t = cope::msg::type_bundle_t<nested::inner::msg::types,
+      nested::outer::msg::types>;
+  using context_t = cope::txn::context_t<type_bundle_t>;
+
+  namespace inner::txn {
+    using task_type = nested::txn::task_t<nested::context_t>;
+    using nested::msg::data_t;
+    using nested::txn::state_t;
+
+    using start_awaiter =
+        cope::txn::start_awaitable<task_type, data_t, state_t>;
+
+    inline auto start(task_type& task, data_t&& msg, int value) {
+      state_t state{value};
+      return start_awaiter{task.handle(), std::move(msg), std::move(state)};
     }
 
-    template<typename ContextT>
-    auto handler(ContextT& context, [[maybe_unused]] cope::txn::id_t task_id)
-      -> cope::txn::task_t<ContextT>
-    {
-      using task_t = cope::txn::task_t<ContextT>;
-      using receive_start_txn = cope::txn::receive_awaitable<task_t, in_msg_t,
-        state_t>;
+    template <cope::txn::Context ContextT>
+    struct manager_t {
+      using context_type = ContextT;
+      using yield_msg_type = context_type::out_msg_type;
+      using task_type = nested::txn::task_t<context_type>;
+      // TODO
+      using awaiter_types = std::tuple<std::monostate>;
 
-      auto inner_task{ inner::handler(context, kInnerTxnId) };
-      state_t state;
+      manager_t(context_type&) {}
 
-      while (true) {
-        cope::log::info("  outer: waiting for start_txn");
-        auto& promise = co_await receive_start_txn{ state };
-        cope::log::info("  outer: received start_txn");
-        while (!promise.context().result().unexpected()) {
-          cope::log::info("  outer: yielding...");
-          co_yield out_msg_t{ 2 };
-          cope::log::info("  outer: resumed");
-          if (std::holds_alternative<inner::in_msg_t>(promise.context().in())) {
-            cope::log::info("  outer: inner txn starting...");
-            auto& inner_msg = std::get<inner::in_msg_t>(promise.context().in());
-            co_await start_inner(inner_task, std::move(inner_msg));
-            cope::log::info("  outer: inner txn complete");
-            break;
-          }
-        }
-        if (!promise.context().result().succeeded()) {
-          cope::log::info("  outer: completing with error {}",
-            promise.context().result().code);
+      cope::result_t update_state(const context_type&, state_t& state) {
+        if (!state.value++) {
+          state.next_operation = cope::operation::yield;
         } else {
-          cope::log::info("  outer: completing");
+          state.next_operation = cope::operation::complete;
         }
-        task_t::complete_txn(promise);
+        return {};
       }
+
+      yield_msg_type get_yield_msg(const state_t&) { return out_msg_t{20}; }
+
+      auto receive_start_txn(context_type&, state_t& state) {
+        using namespace cope::txn;
+        return receive_awaitable<task_type, data_t, state_t>{state};
+      }
+
+      // not specialized, should never be called
+      template <typename T>
+      auto get_awaiter(context_type&, const state_t&, T&) {
+        cope::log::error("inner::get_awaiter");
+        throw new std::runtime_error("inner::get_awaiter");
+      }
+    };  // struct manager_t
+  }  // namespace inner::txn
+
+  namespace outer::txn {
+    using nested::msg::data_t;
+    using nested::txn::state_t;
+
+    template <cope::txn::Context ContextT>
+    struct manager_t {
+      using context_type = ContextT;
+      using yield_msg_type = context_type::out_msg_type;
+      using task_type = nested::txn::task_t<context_type>;
+      // TODO
+      using awaiter_types = std::tuple<std::monostate>;
+
+      manager_t(context_type& context)
+          : inner_task_(cope::txn::handler<nested::txn::task_t,
+              inner::txn::manager_t, context_type>(context, kInnerTxnId)) {}
+
+      cope::result_t update_state(const context_type&, state_t& state) {
+        // state.value:
+        //   0 : start_txn w/ outer_msg -> yield out_msg_t
+        //   1 : inner_msg -> await inner
+        //   2 : outer_msg -> txn_complete
+        switch (state.value++) {
+        case 0: state.next_operation = cope::operation::yield; break;
+        case 1: state.next_operation = cope::operation::await; break;
+        case 2: state.next_operation = cope::operation::complete; break;
+        default:
+          cope::log::error("outer::update_state");
+          throw new std::runtime_error("outer::update_state");
+        }
+        return {};
+      }
+
+      yield_msg_type get_yield_msg(const state_t&) { return out_msg_t{10}; }
+
+      auto receive_start_txn(context_type&, state_t& state) {
+        using namespace cope::txn;
+        return receive_awaitable<task_type, data_t, state_t>{state};
+      }
+
+      // specialized below
+      template <typename T>
+      auto get_awaiter(context_type&, const state_t&, T&) {
+        cope::log::error("outer::get_awaiter");
+        throw new std::runtime_error("outer::get_awaiter");
+      }
+
+    private:
+      nested::txn::task_t<context_type> inner_task_;
+    };  // struct manager_t
+
+    template <>
+    template <>
+    inline auto manager_t<nested::context_t>::get_awaiter(
+        nested::context_t& context, const state_t&,
+        inner::txn::start_awaiter& awaiter) {
+      auto& inner_msg = std::get<data_t>(context.in());
+      awaiter =
+          std::move(inner::txn::start(inner_task_, std::move(inner_msg), 0));
     }
 
     auto run(auto& task, int num_iter) {
       using namespace std::chrono;
 
-      outer::in_msg_t outer_msg{ 1 };
-      inner::in_msg_t inner_msg{ 2 };
+      data_t outer_msg{1};
+      data_t inner_msg{2};
       auto start = high_resolution_clock::now();
       for (int iter{}; iter < num_iter; ++iter) {
-        // if no txn running, wrap msg in a start_t msg
         if (!task.promise().txn_running()) {
-          using start_txn_t = outer::types::start_txn_t;
-          auto txn_start = start_txn_t{ std::move(outer_msg), state_t{iter} };
+          // if no txn running, wrap msg in a start_t msg
+          using start_txn_t = outer::msg::start_txn_t;
+          auto txn_start = start_txn_t{std::move(outer_msg), state_t{0}};
           cope::log::info("sending outer start_txn msg, iter {}", iter);
           [[maybe_unused]] auto& out = task.send_msg(std::move(txn_start));
         } else if (!((iter + 1) % 2)) {
@@ -144,26 +185,8 @@ namespace nested {
       auto end = high_resolution_clock::now();
       return (double)duration_cast<nanoseconds>(end - start).count();
     }
-  } // namespace outer
-} // namespace nested
-
-namespace {
-  double iters_per_ms(int iters, double ns) {
-    return (double)iters / (ns * 1e-6);
-  }
-
-  double ns_per_iter(int iters, double ns) {
-    return ns / (double)iters;
-  }
-
-  void log_result(std::string_view name, int iters, double ns) {
-    std::cerr << name << ", elapsed: " << std::fixed << std::setprecision(0)
-              << ns * 1e-6 << "ms, (" << iters << " iters"
-              << ", " << iters_per_ms(iters, ns) << " iters/ms"
-              << ", " << ns_per_iter(iters, ns) << " ns/iter)"
-              << std::endl;
-  }
-} // namespace (anon)
+  }  // namespace outer::txn
+}  // namespace nested
 
 int main() {
   using namespace nested;
@@ -174,13 +197,11 @@ int main() {
   int num_iter{ 50'000'000 };
 #endif
 
+  using namespace nested;
   double elapsed;
-  using type_bundle_t = cope::msg::type_bundle_t<inner::types, outer::types>;
-  using context_t = cope::txn::context_t<type_bundle_t>;
-  using task_t = cope::txn::task_t<context_t>;
-
   context_t context{};
-  task_t task{ outer::handler(context, kOuterTxnId) };
-  elapsed = outer::run(task, num_iter);
-  log_result("nested", num_iter, elapsed);
+  auto task{cope::txn::handler<txn::task_t, outer::txn::manager_t,
+      context_t>(context, kOuterTxnId)};
+  elapsed = outer::txn::run(task, num_iter);
+  log("nested", num_iter, elapsed);
 }

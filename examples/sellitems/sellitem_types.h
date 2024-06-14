@@ -21,6 +21,7 @@ namespace sellitem {
   namespace txn {
     // state type
     struct state_t {
+      // TODO can these constructors just be removed? try commenting out
       state_t() = default;
       state_t(const std::string& item_name, int item_price)
           : item_name(item_name), item_price(item_price) {}
@@ -36,11 +37,6 @@ namespace sellitem {
     // task type
     template <typename ContextT>
     using task_t = cope::txn::task_t<msg::data_t, state_t, ContextT>;
-
-    // TODO: remove
-    inline auto make_state(const std::string& item_name, int item_price) {
-      return state_t{item_name, item_price};
-    }
   }  // namespace txn
 
   namespace msg {

@@ -16,12 +16,14 @@ namespace cope::txn {
 }  // namespace cope::txn
 
 namespace setprice::txn {
+  using task_type = task_t<app::context_t>;
 
-  template <typename TaskT>
-  inline auto start(const TaskT& task, setprice::msg::data_t&& msg, int price) {
+  using start_awaiter =
+      cope::txn::start_awaitable<task_type, msg::data_t, state_t>;
+
+  inline auto start(task_type& task, msg::data_t&& msg, int price) {
     state_t state{price};
-    return start_awaiter<typename TaskT::context_type>{
-        task.handle(), std::move(msg), std::move(state)};
+    return start_awaiter{task.handle(), std::move(msg), std::move(state)};
   }
 
   cope::result_t update_state(const msg::data_t& msg, state_t& state);

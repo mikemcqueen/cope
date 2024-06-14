@@ -5,9 +5,8 @@
 
 #include "tuple.h"
 
-//using namespace std::literals;
-
 namespace cope {
+  // TODO: move to... context/handler/??
   enum class operation : int {
     yield,
     await,

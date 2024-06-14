@@ -3,60 +3,92 @@
 #include <chrono>
 #include <exception>
 #include <iostream>
+#include <optional>
 #include <string_view>
 #include "cope.h"
 
 namespace simple {
-  constexpr auto kTxnId{ static_cast<cope::txn::id_t>(100) };
+  constexpr auto kTxnId{ cope::txn::make_id(100) };
 
+  // simple::msg
+  namespace msg {
+    struct data_t {
+      int value;
+    };
+  }
+
+  // simple::types
   namespace txn {
-    struct in_msg_t {
+    struct state_t {
       int value;
+      std::optional<cope::operation> next_operation{};
     };
-    struct out_msg_t {
-      int value;
-    };
+  }
 
-    using state_t = int;
+  namespace msg {
+    using start_txn_t = cope::msg::start_txn_t<data_t, txn::state_t>;
 
     struct types {
-      // todo: templated type bundle that takes startMsgT, stateT, in=startMsgT, out=monostate
-      using start_txn_t = cope::msg::start_txn_t<in_msg_t, state_t>;
-      using in_tuple_t = std::tuple<start_txn_t, in_msg_t>;
-      using out_tuple_t = std::tuple<out_msg_t>;
+      using in_tuple_t = std::tuple<start_txn_t, data_t>;
+      using out_tuple_t = std::tuple<std::monostate>;
     };
+  }
 
-    template<typename ContextT>
-    auto handler([[maybe_unused]] ContextT& context,
-      [[maybe_unused]] cope::txn::id_t task_id)
-      -> cope::txn::task_t<ContextT>
-    {
-      using task_t = cope::txn::task_t<ContextT>;
-      using receive_start_txn = cope::txn::receive_awaitable<task_t, in_msg_t, state_t>;
+  // app context
+  namespace app {
+    using type_bundle_t = cope::msg::type_bundle_t<msg::types>;
+    using context_type = cope::txn::context_t<type_bundle_t>;
+  }
 
-      state_t state;
+  namespace txn {
+    template <typename ContextT>
+    using task_t = cope::txn::task_t<msg::data_t, state_t, ContextT>;
 
-      while (true) {
-        auto& promise = co_await receive_start_txn{ state };
-        cope::log::info("  started txn with state: {}", state);
-        task_t::complete_txn(promise);
+    template <cope::txn::Context ContextT>
+    struct manager_t {
+      using context_type = ContextT;
+      using yield_msg_type = context_type::out_msg_type;
+      using task_type = task_t<context_type>;
+      // TODO
+      using awaiter_types = std::tuple<std::monostate>;
+
+      manager_t(context_type&) {}
+
+      cope::result_t update_state(const context_type&, state_t& state) {
+        state.next_operation = cope::operation::complete;
+        return {};
       }
-    }
 
-    template<typename ContextT>
-    auto run(cope::txn::task_t<ContextT>& task, int num_iter) {
-      using namespace std::chrono;
-      auto start = high_resolution_clock::now();
-      in_msg_t msg{ .value{1} };
-      for (int iter{}; iter < num_iter; ++iter) {
-        using start_txn_t = types::start_txn_t;
-        auto txn_start = start_txn_t{ std::move(msg), state_t{iter} };
-        [[maybe_unused]] const auto& r = task.send_msg(std::move(txn_start));
+      // should never be called
+      yield_msg_type get_yield_msg(const state_t&) {
+        throw new std::runtime_error("get_yield_msg");
       }
-      auto end = high_resolution_clock::now();
-      return (double)duration_cast<nanoseconds>(end - start).count();
+
+      auto receive_start_txn(context_type&, state_t& state) {
+        using namespace cope::txn;
+        return receive_awaitable<task_type, msg::data_t, state_t>{state};
+      }
+
+      // not specialized, should never be called
+      template <typename T>
+      auto get_awaiter(context_type&, const state_t&, T&) {
+        throw new std::runtime_error("get_awaiter");
+      }
+    };  // struct manager_t
+  }  // namespace txn
+
+  auto run(txn::task_t<app::context_type>& task, int num_iter) {
+    using namespace std::chrono;
+    auto start = high_resolution_clock::now();
+    msg::data_t msg{.value{1}};
+    for (int iter{}; iter < num_iter; ++iter) {
+      auto txn_start =
+          msg::start_txn_t{std::move(msg), txn::state_t{.value{iter}}};
+      [[maybe_unused]] const auto& r = task.send_msg(std::move(txn_start));
     }
-  } // namespace txn
+    auto end = high_resolution_clock::now();
+    return (double)duration_cast<nanoseconds>(end - start).count();
+  }
 
   double iters_per_ms(int iters, double ns) {
     return (double)iters / (ns * 1e-6);
@@ -86,13 +118,9 @@ int main() {
 
   try {
     double elapsed{};
-    using type_bundle_t = cope::msg::type_bundle_t<simple::txn::types>;
-    using context_t = cope::txn::context_t<type_bundle_t>;
-    using task_t = cope::txn::task_t<context_t>;
-
-    context_t context{};
-    task_t task{ txn::handler(context, kTxnId) };
-    elapsed = txn::run(task, num_iter);
+    app::context_type context{};
+    auto task{cope::txn::handler<txn::task_t, txn::manager_t>(context, kTxnId)};
+    elapsed = run(task, num_iter);
     log_result("simple", num_iter, elapsed);
   }
   catch (std::exception& e) {
