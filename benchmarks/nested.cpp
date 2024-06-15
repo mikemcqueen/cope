@@ -65,8 +65,7 @@ namespace nested {
     }
 
     template <typename ContextT>
-    struct manager_t
-        : cope::txn::basic_manager_t<nested::txn::state_t, ContextT> {
+    struct manager_t : cope::txn::basic_manager_t<state_t, ContextT> {
       using context_type = ContextT;
       using base = typename manager_t::basic_manager_t;
       using state_type = base::state_type;
@@ -119,10 +118,10 @@ namespace nested {
 
       yield_msg_type get_yield_msg(const state_type&) { return out_msg_t{10}; }
 
+      // specialized below
       template <typename T>
       cope::result_t get_awaiter(context_type&, const state_type&, T&) {
-        using cope::result_code;
-        return result_code::e_fail;
+        return cope::result_code::e_fail;
       }
 
     private:

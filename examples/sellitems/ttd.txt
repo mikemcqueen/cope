@@ -1,8 +1,7 @@
+* do i even need to use a function template for get_awaiter?
+
 * could i wrap cope::txn::handler(s) in (a) template functor, thus making it easier to
   create aliases, and cleaner to define the input to _task objects? (just include a ())
-
-* txetprice.h -> setprice_types.h
-* coordinator_t -> manager_t -> txsetprice.h
 
 * don't allow unsupported messages for a particular txn to propagate through
   in the frist place.
@@ -28,7 +27,6 @@
   * with/without std::unique_ptr (including state)
     * small state, large state
     * w and w/o AVX2
-  * with/without string msg_name/txn_name (templatize IdT)
 
 * add compiler options (linux especially?)
 * support command line -q, -i<iter>
