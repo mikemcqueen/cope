@@ -6,16 +6,7 @@
 #include "tuple.h"
 
 namespace cope {
-  // TODO: move to... context/handler/??
-  enum class operation : int {
-    yield,
-    await,
-    complete
-  };
-
   namespace msg {
-    using id_t = int; // HACK TODO
-
     template<typename MsgT, typename StateT>
     struct start_txn_t {
       MsgT msg;

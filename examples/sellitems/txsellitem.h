@@ -50,11 +50,6 @@ namespace sellitem::txn {
       }
     }
 
-    auto receive_start_txn(context_type&, state_t& state) {
-      using namespace cope::txn;
-      return receive_awaitable<task_type, msg::data_t, state_t>{state};
-    }
-
     // specialized below
     template <typename T>
     auto get_awaiter(context_type&, const state_t&, T&) {

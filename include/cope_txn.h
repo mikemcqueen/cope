@@ -156,6 +156,7 @@ namespace cope::txn {
   template<class MsgT, class StateT, Context ContextT>
   struct task_t {
   public:
+    using msg_type = MsgT;
     using state_type = StateT;
     using context_type = ContextT;
     using out_msg_type = context_type::out_msg_type;
@@ -262,18 +263,19 @@ namespace cope::txn {
   };  // txn::context_t
 
   // txn::receive_awaitable
-  template <typename TaskT, typename MsgT, typename StateT>
+  template <typename TaskT> //, typename MsgT, typename StateT>
   struct receive_awaitable
       : public detail::basic_awaiter<typename TaskT::promise_type> {
   private:
-    using base_type = detail::basic_awaiter<typename TaskT::promise_type>;
+    using state_type = TaskT::state_type;
     using promise_type = TaskT::promise_type;
     using handle_type = TaskT::handle_type;
-    using start_txn_t = msg::start_txn_t<MsgT, StateT>;
+    using base_type = detail::basic_awaiter<promise_type>;
+    using start_txn_t = msg::start_txn_t<typename TaskT::msg_type, state_type>;
 
   public:
     receive_awaitable() = delete;
-    explicit receive_awaitable(StateT& state) : state_(state) {}
+    explicit receive_awaitable(state_type& state) : state_(state) {}
 
     std::coroutine_handle<> await_suspend(handle_type h) {
       base_type::await_suspend(h);
@@ -338,22 +340,25 @@ namespace cope::txn {
       }
     }
 
-    StateT& state_;
+    state_type& state_;
   };  // txn::receive_awaitable
 
   // txn::start_awaitable
-  template <typename TaskT, typename MsgT, typename StateT>
+  template <typename TaskT> // , typename MsgT, typename StateT>
   struct start_awaitable
       : public detail::basic_awaiter<typename TaskT::promise_type> {
   private:
-    using base_type = detail::basic_awaiter<typename TaskT::promise_type>;
+    using msg_type = TaskT::msg_type;
+    using state_type = TaskT::state_type;
+    using promise_type = TaskT::promise_type;
     using handle_type = TaskT::handle_type;
-    using start_txn_t = msg::start_txn_t<MsgT, StateT>;
+    using base_type = detail::basic_awaiter<promise_type>;
+    using start_txn_t = msg::start_txn_t<msg_type, state_type>;
 
   public:
     start_awaitable() = default; // delete;
     // TODO: rvalue ref msg & state
-    start_awaitable(handle_type dst_handle, MsgT msg, StateT state)
+    start_awaitable(handle_type dst_handle, msg_type msg, state_type state)
         : dst_handle_(dst_handle), msg_(std::move(msg)),
           state_(std::move(state)) {}
 
@@ -380,51 +385,9 @@ namespace cope::txn {
     }
 
     handle_type dst_handle_;
-    MsgT msg_;
-    StateT state_;
+    msg_type msg_;
+    state_type state_;
   };  // txn::start_awaitable
-
-  // TODO: move to cope_handlers
-  template <template <typename> typename NoContextTaskT,
-      template <typename> typename ManagerT, Context ContextT>
-  // TODO: Coordinator concept requires:
-  //   receive_start_txn, awaiter_types, update_state, get_yield_msg,
-  //   get_awaiter
-  auto handler(ContextT& context, id_t) -> NoContextTaskT<ContextT> {
-    using task_type = NoContextTaskT<ContextT>;
-    using manager_type = ManagerT<ContextT>;
-    using state_type = task_type::state_type;
-    using awaiter_types = typename manager_type::awaiter_types;
-
-    state_type state;
-    manager_type mgr{context};
-
-    while (true) {
-      auto& promise = co_await mgr.receive_start_txn(context, state);
-      auto& context = promise.context();
-      const auto error = [&context](result_code rc) {
-        return context.set_result(rc).failed();
-      };
-
-      while (!context.result().unexpected()) {
-        // TODO: ? see examples/txsellitems.cpp
-        // if (error(msg::validate(context.in()))) break;
-        if (error(mgr.update_state(context, state))) break;
-        if (state.next_operation == operation::yield) {
-          co_yield mgr.get_yield_msg(state);
-        } else if (state.next_operation == operation::await) {
-          typename std::tuple_element<0, awaiter_types>::type awaiter;
-          if constexpr (!std::is_same_v<decltype(awaiter), std::monostate>) {
-            mgr.get_awaiter(context, state, awaiter);
-            co_await awaiter;
-          }
-        } else {
-          break;  // operation::complete
-        }
-      }
-      task_type::complete_txn(promise);
-    }
-  }
 } // namespace cope::txn
 
 // clang-format off

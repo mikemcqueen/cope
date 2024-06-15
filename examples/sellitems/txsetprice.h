@@ -17,9 +17,7 @@ namespace cope::txn {
 
 namespace setprice::txn {
   using task_type = task_t<app::context_t>;
-
-  using start_awaiter =
-      cope::txn::start_awaitable<task_type, msg::data_t, state_t>;
+  using start_awaiter = cope::txn::start_awaitable<task_type>;
 
   inline auto start(task_type& task, msg::data_t&& msg, int price) {
     state_t state{price};
@@ -60,11 +58,6 @@ namespace setprice::txn {
       case action::click_ok: return click_ok_button();
       default: throw new std::runtime_error("invalid action");
       }
-    }
-
-    auto receive_start_txn(context_type&, state_t& state) {
-      using namespace cope::txn;
-      return receive_awaitable<task_type, msg::data_t, state_t>{state};
     }
 
     // not specialized, should never be called
