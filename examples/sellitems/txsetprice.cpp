@@ -20,13 +20,13 @@ namespace setprice::txn {
     return result;
   }
 
-  cope::result_t update_state(const msg::data_t& msg, state_t& state) {
+  cope::expected_operation update_state(
+      const msg::data_t& msg, state_t& state) {
     if (validate_price(msg, state.price).failed()) {
       state.next_action = action::enter_price;
     } else {
       state.next_action = action::click_ok;
     }
-    state.next_operation = cope::operation::yield;
-    return {};
+    return cope::operation::yield;
   }
 } // namespace setprice::txn

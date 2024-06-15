@@ -57,7 +57,7 @@ namespace {
     }
   }
 
-  auto get_data(cope::msg::id_t& out_msg, std::string& out_extra) {
+  auto get_data(int& out_msg, std::string& out_extra) {
     using namespace sellitem::msg;
     using namespace state;
 
@@ -157,7 +157,7 @@ namespace {
     state::reset();
     int frame_count{};
     while (true) {
-      cope::msg::id_t expected_out_msg_id;
+      int expected_out_msg_id;
       std::string extra;
       auto var = get_data(expected_out_msg_id, extra);
       // TODO get_data can do this
@@ -209,7 +209,7 @@ int main() {
   app::get_type_name_t get_type_name{};
   app::context_t context{ get_type_name };
   auto sellitem_task{
-      cope::txn::handler<sellitem::txn::task_t, sellitem::txn::manager_t>(
+      cope::txn::basic_handler<sellitem::txn::task_t, sellitem::txn::manager_t>(
           context, sellitem::kTxnId)};
 
   int total_frames{};

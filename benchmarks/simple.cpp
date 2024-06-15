@@ -57,24 +57,6 @@ namespace simple {
     auto end = high_resolution_clock::now();
     return (double)duration_cast<nanoseconds>(end - start).count();
   }
-
-  /*
-  double iters_per_ms(int iters, double ns) {
-    return (double)iters / (ns * 1e-6);
-  }
-
-  double ns_per_iter(int iters, double ns) {
-    return ns / (double)iters;
-  }
-
-  void log_result(std::string_view name, int iters, double ns) {
-    std::cerr << name << ", elapsed: " << std::fixed << std::setprecision(0)
-      << ns * 1e-6 << "ms, (" << iters << " iters"
-      << ", " << iters_per_ms(iters, ns) << " iters/ms"
-      << ", " << ns_per_iter(iters, ns) << " ns/iter)"
-      << std::endl;
-  }
-  */
 } // namespace simple
 
 int main() {

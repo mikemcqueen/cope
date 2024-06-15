@@ -8,6 +8,7 @@
 #include "appcontext.h"
 #include "setprice_types.h"
 #include "setprice_ui.h"
+#include "cope_handler/basic.h"
 
 namespace cope::txn {
   // explicit instantiation
@@ -24,46 +25,38 @@ namespace setprice::txn {
     return start_awaiter{task.handle(), std::move(msg), std::move(state)};
   }
 
-  cope::result_t update_state(const msg::data_t& msg, state_t& state);
+  cope::expected_operation update_state(const msg::data_t& msg, state_t& state);
 
   template <cope::txn::Context ContextT>
-  struct manager_t {
+  struct manager_t : cope::txn::basic_manager_t<state_t, ContextT> {
     using context_type = ContextT;
-    using yield_msg_type = context_type::out_msg_type;
-    using task_type = task_t<context_type>;
-    // TODO
-    using awaiter_types = std::tuple<std::monostate>;
+    using base = typename manager_t::basic_manager_t;
+    using state_type = base::state_type;
+    using yield_msg_type = base::yield_msg_type;
 
     manager_t(context_type&) {}
 
-    cope::result_t update_state(const context_type& context, state_t& state) {
+    // TODO: can we change this return value to auto?
+    cope::expected_operation update_state(
+        const context_type& context, state_type& state) {
       const auto& msg = context.in();
-      cope::result_t result{};
-      if (result = msg::validate(msg); result.succeeded()) {
+      if (std::holds_alternative<msg::data_t>(msg)) {
         // setprice:msg -> yield next_action_msg
-        using setprice::txn::update_state;
-        return update_state(std::get<msg::data_t>(msg), state);
-      }
-      if (result = sellitem::msg::validate(msg); result.succeeded()) {
+        return setprice::txn::update_state(std::get<msg::data_t>(msg), state);
+      } else if (std::holds_alternative<sellitem::msg::data_t>(msg)) {
         // sellitem::msg -> txn::complete
-        state.next_operation = cope::operation::complete;
+        return cope::operation::complete;
       }
-      return result;
+      return std::unexpected(cope::result_code::e_unexpected_msg_type);
     }
 
-    yield_msg_type get_yield_msg(const state_t& state) {
+    yield_msg_type get_yield_msg(const state_type& state) {
       using namespace setprice::ui;
       switch (state.next_action.value()) {
       case action::enter_price: return enter_price_text(state.price);
       case action::click_ok: return click_ok_button();
       default: throw new std::runtime_error("invalid action");
       }
-    }
-
-    // not specialized, should never be called
-    template <typename T>
-    auto get_awaiter(context_type&, const state_t&, T&) {
-      throw new std::runtime_error("baddd");
     }
   };  // struct manager_t
 }  // namespace setprice::txn

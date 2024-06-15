@@ -22,7 +22,7 @@ namespace setprice {
       //cope::msg::id_t prev_msg_id; // i.e. "who called us"
       int price;
       std::optional<action> next_action{};
-      std::optional<cope::operation> next_operation{};
+      //      std::optional<cope::operation> next_operation{};
     };
 
     // task type

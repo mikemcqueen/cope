@@ -31,7 +31,7 @@ namespace sellitem {
 
       std::optional<int> row_idx{};
       std::optional<action> next_action{};
-      std::optional<cope::operation> next_operation{};
+      //      std::optional<cope::operation> next_operation{};
     };
 
     // task type

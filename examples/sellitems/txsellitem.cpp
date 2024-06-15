@@ -68,7 +68,8 @@ namespace sellitem::txn {
     }
   }  // namespace
 
-  cope::result_t update_state(const msg::data_t& msg, state_t& state) {
+  cope::operation update_state(
+      const msg::data_t& msg, state_t& state) {
     for (size_t row_idx{}; row_idx < msg.rows.size(); ++row_idx) {
       const auto& row = msg.rows.at(row_idx);
       if (is_candidate_row(row, state)) {
@@ -78,12 +79,10 @@ namespace sellitem::txn {
         // TODO: it's not clear this next_action business is necessary.
         // couldn't we just store the out_msg in the state?
         state.next_action = get_next_action(row, state);
-        state.next_operation = cope::operation::yield;
-        return result_code::s_ok;
+        return cope::operation::yield;
       }
     }
     log::info("row: none");
-    state.next_operation = cope::operation::complete;
-    return result_code::s_ok;
+    return cope::operation::complete;
   }
 } // namespace sellitem::txn

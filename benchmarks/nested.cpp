@@ -129,10 +129,10 @@ namespace nested {
       nested::txn::task_t<context_type> inner_task_;
     };  // struct manager_t
 
+    // TODO: remove get_awaiter template param; should be deduced
     template <>
     template <>
-    inline cope::result_t
-    manager_t<nested::context_t>::get_awaiter<inner::txn::start_awaiter>(
+    inline cope::result_t manager_t<nested::context_t>::get_awaiter(
         nested::context_t& context, const state_type&,
         inner::txn::start_awaiter& awaiter) {
       auto& msg = std::get<nested::msg::data_t>(context.in());
